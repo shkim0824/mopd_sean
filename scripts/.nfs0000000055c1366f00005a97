@@ -27,7 +27,7 @@ for ((r = 0; r < ROUNDS; r++)); do
   if [[ ! -s "${SYN}" ]]; then
     placement 1
     J=$(SKELETONS="${SK}/skeletons_train_r${r}.jsonl" DEFENDER="${defender}" ATTACKER="${ATTACKER}" OUT="${SYN}" BUDGET="${BUDGET}" \
-        sbatch --parsable -J "${JP}-ihc-synth-${SIZE}-r${r}" -t 1:30:00 ${PLACE_OPT} scripts/ihc_synth.sbatch)   # short limit: backfill-friendly
+        sbatch --parsable -J "${JP}-ihc-synth-${SIZE}-r${r}" ${PLACE_OPT} scripts/ihc_synth.sbatch)
     echo "$(date '+%H:%M') round ${r}: synth job ${J} (defender ${defender})"; wait_job "${J}" || { echo "ABORT: synth failed"; exit 2; }
   fi
   N=$(wc -l < "${SYN}"); echo "$(date '+%H:%M') round ${r}: ${N} conflict prompts in ${SYN}"; [[ "${N}" -ge 100 ]] || { echo "ABORT: too few rows"; exit 2; }

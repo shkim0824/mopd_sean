@@ -75,9 +75,16 @@ wait_http() {
 MINE_RANGE="ib-a100-cluster-a-n[227-236]"; MINE_EXCL="ib-a100-cluster-a-n[001-226,237-258]"
 RANGE_41_66="ib-a100-cluster-a-n[041-066]"; RANGE_EXCL="ib-a100-cluster-a-n[001-040,067-258]"
 idle_in() { local v; v=$(sinfo -h -n "$1" -t idle -o "%D" 2>/dev/null | head -1); echo "${v:-0}"; }
+pinned_pending() {  # nodes requested by my PENDING jobs that are already pinned to the assigned range
+  local tot=0 j
+  for j in $(squeue -h -t PD -o "%i %j" 2>/dev/null | awk '$2 ~ /^sean-/ {print $1}'); do
+    if scontrol show job "$j" 2>/dev/null | grep -qF "ExcNodeList=${MINE_EXCL}"; then
+      tot=$(( tot + $(scontrol show job "$j" | grep -oE "NumNodes=[0-9]+" | head -1 | cut -d= -f2) )); fi
+  done; echo "${tot}"
+}
 placement() {
   local n="${1:-1}" mine range
-  mine=$(idle_in "${MINE_RANGE}"); range=$(idle_in "${RANGE_41_66}")
+  mine=$(( $(idle_in "${MINE_RANGE}") - $(pinned_pending) )); range=$(idle_in "${RANGE_41_66}")
   if [[ "${mine}" -ge "${n}" ]]; then JP="sean"; PLACE_OPT="--exclude=${MINE_EXCL}"; PLACE_TIER="mine(n227-236)"
   elif [[ "${range}" -ge "${n}" ]]; then JP="k-sean"; PLACE_OPT="--exclude=${RANGE_EXCL}"; PLACE_TIER="n041-066"
   else JP="k-sean"; PLACE_OPT=""; PLACE_TIER="whole-cluster"; fi

@@ -15,16 +15,18 @@ MOPD_REPO="${MOPD_REPO:-${SLURM_SUBMIT_DIR:-$(pwd)}}"; source "${MOPD_REPO}/scri
 cd "${REPO}"; mkdir -p logs tmp/cache
 SKELETONS="${SKELETONS:?set SKELETONS}"; DEFENDER="$(realpath "${DEFENDER:?set DEFENDER}")"; ATTACKER="$(realpath "${ATTACKER:-models/Qwen3-4B}")"   # frozen official attacker (think off); ATTACKER=<defender> for self-play
 OUT="${OUT:?set OUT}"; BUDGET="${BUDGET:-3}"; LIMIT_ARG=""; [[ -n "${LIMIT:-}" ]] && LIMIT_ARG="--limit ${LIMIT}"
+TP="${TP:-1}"; NSH=$((8 / TP)); EXTRA="${EXTRA:-}"; [[ "${ATK_THINK:-0}" == "1" ]] && EXTRA="${EXTRA} --atk-think --atk-tokens ${ATK_TOKENS:-4096}"
 mkdir -p "$(dirname "${OUT}")"
 NODE="$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -1)"
 echo "[ihc-synth] skeletons=${SKELETONS} defender=${DEFENDER} attacker=${ATTACKER} budget=${BUDGET} out=${OUT} start=$(date +%s)"
 srun --nodes=1 --ntasks=1 --export=ALL --container-image="${IMG}" --container-mounts="${MOUNT}" --container-workdir="${REPO}" bash -lc "
 ${FWD_ENV} ${PRELUDE} cd '${REPO}'; pids=()
-for g in 0 1 2 3 4 5 6 7; do
-  export CUDA_VISIBLE_DEVICES=\$g VLLM_PORT=\$((41000 + g*1000))
+for ((i=0;i<${NSH};i++)); do
+  g=\$i; lo=\$((i*${TP})); gpus=\$lo; for ((k=1;k<${TP};k++)); do gpus=\"\$gpus,\$((lo+k))\"; done
+  export CUDA_VISIBLE_DEVICES=\$gpus VLLM_PORT=\$((41000 + i*1000))
   $(cache_env '$g' | sed 's/\$SLURM_JOB_ID/'"${SLURM_JOB_ID}"'/g')
   python -m mopd.data.domains.ihc_attack_synth --skeletons '${SKELETONS}' --attacker '${ATTACKER}' --defender '${DEFENDER}' \
-    --out '${OUT}' --budget ${BUDGET} --shard-rank \$g --num-shards 8 ${LIMIT_ARG} > logs/ihc-synth-${SLURM_JOB_ID}-shard\$g.log 2>&1 &
+    --out '${OUT}' --budget ${BUDGET} --shard-rank \$i --num-shards ${NSH} --tp ${TP} ${EXTRA} ${LIMIT_ARG} > logs/ihc-synth-${SLURM_JOB_ID}-shard\$i.log 2>&1 &
   pids+=(\$!)
 done
 rc=0; for p in \"\${pids[@]}\"; do wait \$p || rc=1; done
