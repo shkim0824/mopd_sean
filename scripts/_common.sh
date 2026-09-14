@@ -64,15 +64,30 @@ wait_http() {
   done
 }
 
-# prefer <n_nodes> -> sbatch --exclude for the node rule: n041-066 when that many are idle there, otherwise anywhere >= 41
-# (never n001-040; n250 has a faulty IB link)
+# ---- node placement rule (user 2026-09-14): three tiers, checked in order
+#   1. MINE  = ib-a100-cluster-a-n[227-236] (assigned to sean; anything else running there may be cancelled by hand)
+#              -> if >= n idle nodes there: pin the job to that range, job prefix "sean-"
+#   2. RANGE = ib-a100-cluster-a-n[041-066]  -> if >= n idle nodes there: pin to that range, prefix "k-sean-" (never cancel others)
+#   3. otherwise: no node exclusion at all (whole cluster), prefix "k-sean-"
+# place <n_nodes> prints the sbatch --exclude option and sets JP (job prefix) for the caller:  J=$(place 4); sbatch $J -J "${JP}-..."
+MINE_RANGE="ib-a100-cluster-a-n[227-236]"; MINE_EXCL="ib-a100-cluster-a-n[001-226,237-258]"
+RANGE_41_66="ib-a100-cluster-a-n[041-066]"; RANGE_EXCL="ib-a100-cluster-a-n[001-040,067-258]"
+idle_in() { local v; v=$(sinfo -h -n "$1" -t idle -o "%D" 2>/dev/null | head -1); echo "${v:-0}"; }
+place() {
+  local n="${1:-1}" mine range
+  mine=$(idle_in "${MINE_RANGE}"); range=$(idle_in "${RANGE_41_66}")
+  if [[ "${mine}" -ge "${n}" ]]; then JP="sean"; echo "--exclude=${MINE_EXCL}"
+  elif [[ "${range}" -ge "${n}" ]]; then JP="k-sean"; echo "--exclude=${RANGE_EXCL}"
+  else JP="k-sean"; echo ""; fi
+}
+# prefer <n_nodes>: kept for old call sites = tier 2/3 only (never places on the assigned range)
 prefer() {
-  local idle; idle=$(sinfo -h -n ib-a100-cluster-a-n[041-066] -t idle -o "%D" 2>/dev/null | head -1); idle=${idle:-0}
-  if [[ "${idle}" -ge "$1" ]]; then echo "--exclude=ib-a100-cluster-a-n[001-040,067-258]"; else echo "--exclude=ib-a100-cluster-a-n[001-040,250]"; fi
+  local idle; idle=$(idle_in "${RANGE_41_66}")
+  if [[ "${idle}" -ge "$1" ]]; then echo "--exclude=${RANGE_EXCL}"; else echo ""; fi
 }
 
 # job-name prefix (cluster rule: k-sean-* for jobs that may land outside n041-066)
-JP="${JOB_PREFIX:-k-sean}"
+JP="${JOB_PREFIX:-k-sean}"   # overwritten by place()
 
 # per-job compile caches for vLLM workers (shared /tmp inductor caches got corrupted by concurrent jobs); they pile up
 # under tmp/cache -> tools/disk/clean_caches.sh removes those of finished jobs

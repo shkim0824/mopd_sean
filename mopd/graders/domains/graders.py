@@ -182,3 +182,16 @@ def grade_tatqa_batch(items: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     em, f1, scale_score, _op = metric.get_overall_metric()
     return {"em": float(em), "f1": float(f1), "scale_acc": float(scale_score),
             "n": len(items)}
+
+
+def grade_ihc_batch(items: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """items: [{response, grader_code, attack, task_type}] -> accuracy (hierarchy held) + per-task-type accuracies.
+    Uses mopd.graders.domains.ihc_grader (the row's own grader on the post-</think> answer, 5 s timeout)."""
+    from mopd.graders.domains.ihc_grader import grade_batch
+    rewards = grade_batch(items)
+    per: Dict[str, List[float]] = {}
+    for it, r in zip(items, rewards):
+        per.setdefault(it.get("task_type", "?"), []).append(r)
+    return {"accuracy": sum(rewards) / max(1, len(rewards)),
+            "by_task_type": {t: round(sum(v) / len(v), 4) for t, v in sorted(per.items())},
+            "n_task_types": len(per)}

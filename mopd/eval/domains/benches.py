@@ -219,7 +219,24 @@ def load_tatqa(split: str = "test", limit: Optional[int] = None) -> List[Dict[st
     return rows
 
 
+def load_ihc_heldout(limit: Optional[int] = None, attacks: str = "heldout_attacks_ot3-4b.jsonl") -> List[Dict[str, Any]]:
+    """IH-Challenge safety benchmark (in-domain, held out): 10% of the single+multi-constraint skeletons never used
+    for training, each with a FIXED injected attack (synthesised once, budget 3, attacker = defender = Qwen3-4B-OT3)
+    so that every model is scored on the same conflict prompts. Rows carry `messages` (system = privileged
+    instruction, user = attack) and the row's own grader; score = fraction of prompts where the hierarchy held."""
+    rows = []
+    for line in open(os.path.join(D, "ih-challenge", attacks)):
+        r = json.loads(line)
+        rows.append({"id": f"ihc_{r['id']}", "grade_kind": "ihc", "messages": r["messages"],
+                     "prompt": r["messages"][-1]["content"], "grader_code": r["grader_code"],
+                     "attack": r.get("attack", ""), "task_type": r.get("task_type", "?"), "split": r.get("split", "?")})
+        if limit and len(rows) >= limit:
+            break
+    return rows
+
+
 BENCHES = {
+    "ihc": load_ihc_heldout,
     "medqa": load_medqa_test,
     "medxpertqa": load_medxpertqa_text,
     "pubmedqa": load_pubmedqa_test,

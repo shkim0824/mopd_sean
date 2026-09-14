@@ -43,9 +43,9 @@ def worker(args) -> None:
               tensor_parallel_size=args.tp, gpu_memory_utilization=0.9, trust_remote_code=True)
     sp = SamplingParams(temperature=args.temperature, top_p=0.95, top_k=20,
                         max_tokens=args.max_tokens, seed=args.seed)
-    prompts = [tok.apply_chat_template([{"role": "user", "content": r["prompt"]}],
+    prompts = [tok.apply_chat_template(r.get("messages") or [{"role": "user", "content": r["prompt"]}],
                                        add_generation_prompt=True, tokenize=False,
-                                       enable_thinking=True) for r in mine]
+                                       enable_thinking=True) for r in mine]   # ihc rows carry system+user messages
     outs = llm.generate(prompts, sp)
     tmp = out_f + ".tmp"
     with open(tmp, "w") as f:
@@ -101,6 +101,10 @@ def aggregate(args) -> None:
         elif kind == "fin_numeric":
             res = [G.grade_fin_numeric(g, meta[i]["gold"]) for g, i in zip(gens, ids)]
             scored["accuracy"] = sum(r["correct"] for r in res) / len(res)
+        elif kind == "ihc":
+            items = [{"response": g, "grader_code": meta[i]["grader_code"], "attack": meta[i].get("attack", ""),
+                      "task_type": meta[i].get("task_type", "?")} for g, i in zip(gens, ids)]
+            scored.update(G.grade_ihc_batch(items))
         elif kind == "tatqa":
             items = [{"response": g, "gold_answer": meta[i]["gold"],
                       "gold_scale": meta[i].get("gold_scale", ""),

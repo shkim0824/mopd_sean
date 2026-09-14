@@ -43,3 +43,24 @@ def mopd_if_processor(datum_dict: dict[str, Any], task_data_spec: TaskDataSpec, 
                   {"instruction_id_list": datum_dict["instruction_id_list"],
                    "kwargs": datum_dict["kwargs"],
                    "prompt": datum_dict["messages"][0]["content"]})
+
+
+def mopd_ihc_processor(datum_dict: dict[str, Any], task_data_spec: TaskDataSpec, tokenizer,
+                       max_seq_length: int, idx: int) -> DatumSpec:
+    """IH-Challenge conflict prompt: messages = [system (privileged instruction), user (injected attack)] rendered
+    as-is (no task system prompt); the row's grader_code + attack become the env metadata (mopd_ihc env)."""
+    message_list = [{"role": m["role"], "content": m["content"]} for m in datum_dict["messages"]]
+    message: str = tokenizer.apply_chat_template(message_list, tokenize=False, add_generation_prompt=True,
+                                                 add_special_tokens=False)
+    token_ids = tokenizer(message, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+    message_log: LLMMessageLogType = [{"role": "user", "content": message, "token_ids": token_ids}]
+    length = len(token_ids)
+    loss_multiplier = 1.0
+    if length >= max_seq_length:
+        for m in message_log:
+            m["token_ids"] = m["token_ids"][: min(4, max_seq_length // len(message_log))]
+        loss_multiplier = 0.0
+    return {"message_log": message_log, "length": length, "loss_multiplier": loss_multiplier, "idx": idx,
+            "task_name": datum_dict["task_name"],
+            "extra_env_info": {"grader_code": datum_dict["grader_code"], "attack": datum_dict.get("attack", ""),
+                               "task_type": datum_dict.get("task_type", "")}}
