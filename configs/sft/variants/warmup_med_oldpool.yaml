@@ -1,0 +1,36 @@
+# Off-policy SFT distillation warm-up (med): OT3 student <- rejection-sampled trajectories of the med teacher
+# (same prompts as the med OPD pool, k=1 at T=1.0, letter-exact filter). 200 steps x 32 sequences (G=1):
+# 1 node, per_device_bs 1 x grad_accum 4 x 8 GPUs = 32 seqs/step, packing none (padding), save every 25 steps (weights only).
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_warmup/med_sft6400.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 20480
+  thinking: true
+  packing: none
+  seed: 42
+train:
+  output: outputs/sft/sft_warmup_med
+  epochs: 1.0
+  max_steps: 200
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 4
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: steps
+  save_steps: 25
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

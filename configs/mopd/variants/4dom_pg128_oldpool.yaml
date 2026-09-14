@@ -1,0 +1,47 @@
+# MOPD (4 domains, PG): OT3 student <- law RL teacher + fin RL teacher + IF RL teacher + medical SFT teacher.
+# 128 prompts / update = 32 prompts of EVERY domain per batch (balanced, sequential), G=1, 200 steps.
+model:
+  student: models/Qwen3-4B-OT3
+  dtype: float32
+teachers:
+  endpoints_file: ""                   # written by scripts/opd.sbatch (mopd.distill.placement)
+  top_k: 64
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    law: data/rl_pools/law_rl_v2_train.jsonl
+    fin: data/rl_pools/fin_train.jsonl
+    if: data/rl_pools/if_train.jsonl
+    med: data/rl_pools/med_opd_train.jsonl
+  max_rows_per_domain: null
+  seed: 42
+  thinking: true
+  per_domain_per_batch: 32
+distill:
+  mode: pg
+  a_max: 5.0
+  task_reward_coef: 0.0
+  log_task_reward: false
+train:
+  lr: 1.0e-6
+  batch_size: 128
+  num_generations: 1
+  max_completion_length: 16384
+  max_steps: 200
+  per_device_bs: 1
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  save_steps: 25
+  save_total_limit: null
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  vllm_is_mode: token_truncate
+  ddp_timeout: 7200
+  mask_truncated_completions: false
+  output: outputs/opd/mopd-4dom-128

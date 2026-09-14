@@ -1,0 +1,7 @@
+# grader deps (pure python): IFEval / IFBench / IFEvalG checkers + LiveCodeBench harness
+nltk
+langdetect
+immutabledict
+absl-py
+emoji
+syllapy

@@ -1,0 +1,33 @@
+# Mixed law+med SFT warm-up (user 2026-09-14): law_sft6400 sampled 3,200 rows (= law warm-up ck100 exposure) + med_sftp_k4_keep3 x2 (= scaled-up B 2-epoch exposure), shuffled seed 42, 1 epoch, teacher recipe (flatten 8192, lr 1e-5). Otherwise = sft_warmup_med_c6k3_4ep.yaml
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {mix: data/sft_warmup/mix_law3200_medB2ep.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 8192
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_warmup_mix_lawmed
+  epochs: 1.0
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

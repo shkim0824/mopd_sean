@@ -1,0 +1,45 @@
+# Stage 2 per-domain RL expert (2 nodes = 16 GPU). Paper Appendix A: on-policy GRPO + dynamic sampling,
+# lr 3e-6, BS 144 prompts x N=8 rollouts (1152 sequences / step), ~175K sequences => ~152 steps, max len 32,768.
+model:
+  init: outputs/sft/mot_qwen3-8b
+  dtype: float32                       # fp32 master weights (bf16 Adam rounds lr=3e-6 updates to zero)
+domain: math
+data:
+  path: data/train/rl_math.jsonl
+  max_rows: null
+  seed: 42
+  math_style: qwen
+  lcb_system: false                    # LCB system text folded into the user turn (SFT data has no system turns)
+  thinking: true
+rl:
+  lr: 3.0e-6
+  prompts_per_step: 144
+  num_generations: 8
+  max_completion_length: 30720            # + prompt <= Qwen3-4B-Base max_position_embeddings 32768
+  max_steps: 152
+  per_device_bs: 4                     # 1152 / (4 * 16) = 18 micro-steps of grad accumulation
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0                            # no reference-KL (DAPO / paper "on-policy GRPO")
+  epsilon: 0.2
+  epsilon_high: 0.28                   # DAPO clip-higher
+  loss_type: dapo                      # token-level normalisation
+  scale_rewards: group
+  mask_truncated_completions: true     # DAPO overlong filtering (no gradient from truncated rollouts)
+  warmup_ratio: 0.0
+  scheduler: constant
+  max_grad_norm: 1.0
+  save_steps: 10                       # user 2026-08-30: every 10 steps
+  save_total_limit: null               # user 2026-08-30: keep ALL RL checkpoints
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.3
+  vllm_tp: 1
+  vllm_is_mode: token_truncate         # trl default sequence_mask zeroes grads on long completions (2026-08-30)
+  vllm_is_cap: 3.0
+  ddp_timeout: 7200
+  output: outputs/rl/qwen3-8b-math
+reward:
+  code_workers: 24
+  code_timeout: 6
+  if_all_or_nothing: false             # open-instruct IFEvalVerifier = fraction of constraints passed
+  require_finished_thinking: true

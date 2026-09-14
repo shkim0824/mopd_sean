@@ -1,0 +1,10 @@
+# Eval defaults (user decisions 2026-08-30 — DEVIATE from the MOPD paper Appendix B which uses T=1.0, no top-p/top-k, AIME avg@32):
+#   sampling = Qwen3 thinking-mode recommendation T=0.6 / top_p 0.95 / top_k 20; AIME avg@8; LCB pass@1 (n=1); IF once; 16k tokens.
+# CLI flags of mopd.eval.run_eval override these; `--preset paper` restores the paper protocol.
+preset: qwen-thinking
+max_tokens: 16384
+max_model_len: 40960
+n_math: 8
+n_code: 1
+n_if: 1
+lcb_window: {start: "", end: ""}     # e.g. start 2025-02-01 end 2025-05-01 = Qwen "v6 (25.02-25.05)" window

@@ -1,0 +1,34 @@
+# med distill SFT v2 (v2b): 1 trace/prompt chosen by (fewest option-enumeration patterns, shortest), think <= 16k chars,
+# v2a = MedQA-train only (eval-distribution), v2b = MedQA-train + MedMCQA 20k. 2-node pd1 = 16 bins/step, lr 1e-5, 2ep.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_distill_v2/med_v2b_medqa_mcqa20k.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 8192
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_med_v2b
+  epochs: 2.0
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

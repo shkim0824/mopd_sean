@@ -1,0 +1,48 @@
+# Stage 3 MOPD (2 nodes: node0 = student x8 GPU, node1 = teacher prefill servers x8 GPU).
+# Paper Appendix A: BS 2048, N=1, no dynamic sampling, ratio math:if:swe = .35:.35:.30 (here math:code:if),
+# A_max = 5 (policy-gradient form), k = 64 (top-k form). Sampling T = 1.0. LR not stated -> 1e-6.
+model:
+  student: outputs/sft/mot_qwen3-4b        # same-origin: the SFT checkpoint the teachers were RL'd from
+  dtype: float32
+teachers:
+  endpoints_file: ""                   # written by scripts/mopd_2node.sbatch (placement.py)
+  top_k: 64
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    math: data/train/rl_deepmath_d69.jsonl
+    code: ""
+    if:   ""
+  ratio: {math: 1.0, code: 0.0, if: 0.0}
+  max_rows_per_domain: null
+  seed: 42
+  math_style: qwen
+  lcb_system: false                    # LCB system text folded into the user turn (SFT data has no system turns)
+  thinking: true
+distill:
+  mode: topk                             # pg (Eq. 4, default in the paper) | topk (Eq. 5)
+  a_max: 5.0
+  task_reward_coef: 0.0                # >0 adds the verifiable-reward GRPO advantage (verl use_task_rewards style)
+  log_task_reward: false               # compute+log the task reward without using it (costs grading time)
+train:
+  lr: 3.0e-6
+  batch_size: 64                       # 64 prompts x G=1                     # sequences per optimizer step
+  num_generations: 1                   # N=1 (paper); trl's >=2 check is bypassed in MOPDTrainer
+  max_completion_length: 30720            # + prompt <= Qwen3-4B-Base max_position_embeddings 32768
+  max_steps: 152                        # 60 x 2048 = 123K sequences (paper Fig. 2 plateau ~25-30K per domain)
+  per_device_bs: 1                     # OOM fix 555061: fp32 student + colocate vLLM + teacher topk buffers need pd1 (same anatomy as rl 554639)
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.0
+  max_grad_norm: 1.0
+  save_steps: 10
+  save_total_limit: null               # keep ALL checkpoints
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  ddp_timeout: 7200
+  mask_truncated_completions: false
+  output: outputs/mopd/qwen3-4b-deepmath-235bthink

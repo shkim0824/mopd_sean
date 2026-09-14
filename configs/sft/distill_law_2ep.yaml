@@ -1,0 +1,36 @@
+# law distillation SFT of Qwen3-4B-OT3 on verified Qwen3.6-35B-A3B teacher traces
+# (rejection-sampled, letter-exact, <=2 shortest-distinct/prompt, no replay). 4-node:
+# pd4 x 32 GPU = 128 bins/step (~2.6M tok/step). 2 epoch(s), lr 1e-5, cosine, save each epoch.
+# max_len 20480 > teacher cap (16384 gen tok + prompt); over-long rows are dropped by the loader.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {law: data/sft_distill/law_sft.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 20480
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_law_2ep
+  epochs: 2.0
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 4
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

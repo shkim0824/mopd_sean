@@ -1,0 +1,33 @@
+# SCALED-UP WARM-UP (A): the medical SFT teacher (C6-4ep) trajectories, k=1 per prompt (7,893 rows), trained with the TEACHER RECIPE (2-node, flatten 8192, lr 1e-5, 4 epochs, save each epoch) = ~32k row-passes
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_warmup/med_sftp_sft_accepted.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 8192
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_warmup_med_c6k1_4ep
+  epochs: 4.0
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

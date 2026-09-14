@@ -1,0 +1,136 @@
+# GRPO math RL: Qwen3-4B-OT3 on Nemotron-RL-Ultra rlvr1 math rows (math_with_judge).
+# Hyperparameters anchored to the OFFICIAL Nemotron-3-Ultra student_rlvr1.yaml
+# (ultra-v3 branch) with user-decided deltas (2026-09-04): lr 3e-6, 32 prompts/step,
+# G=8, max len 32768, overlong buffer 2048/penalty 1.0, ckpt every 10 steps keep-all.
+# Ultra-inherited: constant lr + 10-step warmup, KL 0, clip 0.2/0.28, token-level loss
+# + TIS(5), leave-one-out baseline, normalized rewards, advantage clip +-20, T=1.0,
+# pass-rate curriculum order (shuffle false), val = last-100 rows of the blend slice.
+defaults: /opt/nemo-rl/examples/configs/grpo_math_1B.yaml
+
+grpo:
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 8
+  max_num_epochs: 1                  # 4,676 train rows / 32 = ~146 steps per epoch
+  max_num_steps: 1000000
+  normalize_rewards: true
+  use_leave_one_out_baseline: true
+  val_period: 20
+  val_at_start: true
+  max_val_samples: 100
+  val_batch_size: 100
+  overlong_filtering: false
+  advantage_clip_low: -20
+  advantage_clip_high: 20
+  use_dynamic_sampling: false
+  reward_shaping:
+    enabled: true
+    overlong_buffer_length: 2048     # user 2026-09-04
+    overlong_buffer_penalty: 1
+    max_response_length: ${policy.max_total_sequence_length}
+
+loss_fn:
+  reference_policy_kl_penalty: 0.0   # ultra: no KL
+  ratio_clip_min: 0.2
+  ratio_clip_max: 0.28               # DAPO clip-higher (ultra)
+  use_importance_sampling_correction: true
+  truncated_importance_sampling_type: "tis"
+  truncated_importance_sampling_ratio: 5
+  truncated_importance_sampling_ratio_min: 0.2
+  sequence_level_importance_ratios: false
+  token_level_loss: true
+
+checkpointing:
+  enabled: true
+  checkpoint_dir: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/outputs/rl/grpo_nemotron_math_4b"
+  metric_name: "val:accuracy"
+  higher_is_better: true
+  keep_top_k: 1000                   # user: keep EVERY checkpoint (save_period 10)
+  save_period: 10
+  model_save_format: "safetensors"
+  save_consolidated: true
+
+policy:
+  model_name: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/models/Qwen3-4B-OT3"
+  tokenizer:
+    name: ${policy.model_name}
+  train_global_batch_size: 256       # = 32 prompts x G=8: one optimizer batch per GRPO step
+  train_micro_batch_size: 1
+  logprob_batch_size: 2
+  max_total_sequence_length: 32768   # user 2026-09-04
+  precision: "bfloat16"
+  dtensor_cfg:
+    enabled: true
+    activation_checkpointing: true
+    tensor_parallel_size: 1
+    context_parallel_size: 1
+  optimizer:
+    name: "torch.optim.AdamW"
+    kwargs:
+      lr: 3.0e-6                     # user 2026-09-04 (ultra student 4e-6, teachers 2.5-3e-6)
+      weight_decay: 0.0
+      betas: [0.9, 0.999]
+      eps: 1e-8
+  scheduler:
+    - name: "torch.optim.lr_scheduler.LinearLR"
+      kwargs:
+        start_factor: 0.1            # ultra: 10-iteration warmup from lr/10
+        end_factor: 1.0
+        total_iters: 10
+    - name: "torch.optim.lr_scheduler.ConstantLR"
+      kwargs:
+        factor: 1.0
+        total_iters: 10000000000
+    - milestones: [10]
+  generation:
+    backend: "vllm"
+    max_new_tokens: ${policy.max_total_sequence_length}
+    temperature: 1.0                 # blend rows embed T=1.0/top_p 1.0
+    top_p: 1.0
+    top_k: null
+    vllm_cfg:
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.6
+      max_model_len: ${policy.max_total_sequence_length}
+      enforce_eager: false
+
+data:
+  max_input_seq_length: ${policy.max_total_sequence_length}
+  shuffle: false                     # OFFICIAL: consume the pass-rate curriculum order as-is
+  train:
+    dataset_name: ResponseDataset
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/nemotron_math/train.jsonl"
+    input_key: input
+    output_key: output
+    split_validation_size: 0        # explicit val file below; keep all 4,676 train rows
+  validation:
+    dataset_name: ResponseDataset
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/nemotron_math/val.jsonl"
+    input_key: input
+    output_key: output
+  default:
+    prompt_file: null                # blend questions already carry their answer-format scaffolding
+    system_prompt_file: null
+    processor: "math_hf_data_processor"
+    env_name: "math_with_judge"
+
+env:
+  math_with_judge:
+    num_workers: 8
+    # re-read from this file at every step -> survives judge-job restarts on a new node
+    judge_base_url: "file:///mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/tmp/judge_url"
+    judge_model: "judge"
+    should_use_judge: true
+    judge_max_tokens: 4096
+    judge_timeout_seconds: 600
+    judge_concurrency: 16
+    judge_answer_max_chars: 4000
+
+logger:
+  # ABSOLUTE path: the driver's cwd is /opt/nemo-rl inside the container, so a relative
+  # log_dir lands in the throwaway overlay (smoke lesson 2026-09-04)
+  log_dir: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/logs/nemo/nemo"
+  tensorboard_enabled: true
+
+cluster:
+  gpus_per_node: 8
+  num_nodes: 4

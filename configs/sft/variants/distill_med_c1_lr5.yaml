@@ -1,0 +1,34 @@
+# med distill v3 candidate c1: teacher k=8 traces (medqa4/medqa5 pools, relaxed decon 9,889 prompts),
+# select_traces (min-enum, shortest, cap). 2-node pd1, max_len 8192, lr 1e-5, 2 epochs, save each epoch.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_distill_v3/c1_4opt_k1.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 8192
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_med_c1_lr5
+  epochs: 2.0
+  lr: 5.0e-6
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

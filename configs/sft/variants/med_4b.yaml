@@ -1,0 +1,36 @@
+# Medical domain SFT: continued SFT of Qwen3-4B-OT3 on m23k + Medical-R1-Distill
+# (43,826 long-CoT rows, decontaminated). 4-node baseline (32 GPU): pd4 x 32 = 128
+# bins/micro, ga2 -> 256 bins/step. lr 1e-5 (continued-SFT scale, m1-paper range),
+# 2 epochs, cosine, max_len 24576 (R1 traces up to ~21k tok).
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_med/med_sft_messages.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 24576
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_med_4b
+  epochs: 2.0
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 4
+  grad_accum: 2
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: steps
+  save_steps: 20
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

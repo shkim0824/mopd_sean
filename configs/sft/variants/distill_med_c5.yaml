@@ -1,0 +1,33 @@
+# med C5: self-RFT (v2a ck240 samples at T=0.6, k=8, keep<=2 correct short traces, cap 12k) continued from v2a ck240; 1 epoch lr 5e-6, 2-node pd1.
+model:
+  base: outputs/sft/sft_distill_med_v2a/checkpoint-240
+  attn: auto
+data:
+  sources: {med: data/sft_distill_v3/c5_selfrft_k2.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 8192
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_med_c5
+  epochs: 1.0
+  lr: 5.0e-6
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

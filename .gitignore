@@ -1,0 +1,24 @@
+# --- cluster-only assets: symlink farms + rsynced data created by setup_cluster.sh (not part of the code)
+/models/
+/data/
+/outputs/
+/logs/
+/tmp/
+/env/nltk_data/
+/env/tiktoken/
+/env/nemo_extras/
+/configs/*/generated/
+# --- benchmark repositories cloned into third_party/ (setup_cluster.sh rsyncs them on the cluster; see third_party/PATCHES.md)
+/third_party/legalbench/
+/third_party/LEXam/
+/third_party/casehold/
+/third_party/FinQA/
+/third_party/TAT-QA/
+/third_party/DocMath-Eval/
+/third_party/FinanceReasoning/
+/third_party/MedXpertQA/
+/third_party/pubmedqa/
+# --- python / editor noise
+__pycache__/
+*.pyc
+.DS_Store

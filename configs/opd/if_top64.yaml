@@ -1,0 +1,42 @@
+# OPD (if, top64): OT3 student <- IF teacher (mopd_rl/models/rl-if-ck200) on the IF RL prompt pool; paper 2606.30406 recipe via mopd.distill.
+model:
+  student: models/Qwen3-4B-OT3
+  dtype: float32
+teachers:
+  endpoints_file: ""                   # written by scripts/opd.sbatch (mopd.distill.placement)
+  top_k: 64
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    if: data/rl_pools/if_train.jsonl
+  max_rows_per_domain: null
+  seed: 42
+  thinking: true
+distill:
+  mode: topk                          # pg (Eq. 3-4, A_max clip) | topk (Eq. 5 over teacher top-k)
+  a_max: 5.0
+  task_reward_coef: 0.0
+  log_task_reward: false
+train:
+  lr: 1.0e-6
+  batch_size: 32                       # 32 prompts x G=1 per optimizer step
+  num_generations: 1
+  max_completion_length: 16384         # = the teachers' RL rollout cap
+  max_steps: 200
+  per_device_bs: 1
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  save_steps: 25                       # every 25 steps (curve); optimizer states stripped after the run
+  save_total_limit: null               # keep ALL checkpoints
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  vllm_is_mode: token_truncate
+  ddp_timeout: 7200
+  mask_truncated_completions: false
+  output: outputs/opd/if-top64

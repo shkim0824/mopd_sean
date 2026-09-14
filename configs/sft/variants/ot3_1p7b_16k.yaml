@@ -1,0 +1,38 @@
+# OpenThoughts3-1.2M general SFT — Qwen3-1.7B-Base, 2 nodes (16 GPU, ZeRO-2), 1 epoch.
+# Mirrors the OFFICIAL OpenThinker3-1.5B scale-down (trainer card: lr 1.6e-4, global batch 256) —
+# see configs/sft_ot3_4b.yaml + docs/OT3_SFT.md for sources and rationale:
+#   lr 1.5e-4  : official 1.5B=1.6e-4, R1-distill 1.5B=1e-4; 1.7B slightly larger -> 1.5e-4
+#                (bracket 1.0e-4..1.6e-4)
+#   global batch 256 bins (~4.2M tok/step): official 1.5B used HALF the 7B batch
+#   same cutoff 16384 / packing / warmup 0.05 / wd 0 / cosine; SAME cache as the 4B run
+#   (Qwen3-4B/1.7B tokenizers are identical — asserted by prep --check-tokenizer)
+# ~970k bins / 256 = ~3.8k steps; 1.7B trains ~2x faster per token than 4B -> ~35 h on 2 nodes.
+model:
+  base: models/Qwen3-1.7B-Base
+  attn: auto
+data:
+  cache_dir: data/train/ot3_cache_len16384
+  max_len: 16384
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/ot3_qwen3-1p7b
+  epochs: 1.0
+  lr: 1.5e-4
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 4                      # 4 bins x 16 GPU = 64 bins/micro-step
+  grad_accum: 4                         # 256 bins ~ 4.2M tok / optimizer step == official 1.5B global batch
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: steps
+  save_steps: 100                       # ~2.5 h cadence; ~38 ckpts x ~24 GB (keep ALL)
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

@@ -1,0 +1,36 @@
+# MOPD runtime venv (.venv/mopd) = the mtm/conductor pins (same torch/vLLM/trl/transformers stack that is
+# proven on this cluster) minus botorch. Built by env/setup_mopd_env.sbatch INSIDE the ngc-2410 container
+# on a compute node (login node has no PyPI) with `uv pip install --index-strategy unsafe-best-match`.
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+torch==2.9.0
+torchvision==0.24.0
+torchaudio==2.9.0
+
+vllm==0.12.0
+trl==0.29.0
+transformers==4.57.6
+accelerate==1.13.0
+deepspeed==0.18.8
+ray==2.55.1
+flashinfer-python==0.5.3
+
+openai==2.24.0
+requests==2.32.5
+datasets==4.7.0
+hf_transfer==0.1.9
+math-verify==0.9.0
+peft==0.18.1
+tensorboard==2.20.0
+numpy==2.2.6
+PyYAML==6.0.3
+sentencepiece==0.2.1
+einops==0.8.2
+pyarrow>=19
+tenacity
+omegaconf
+
+# --- SFT acceleration (added 2026-08-30, installed additively into .venv/mopd by the sftopt session) ---
+# flash-attn 2.8.3 prebuilt wheel for cu128/torch2.9/cp313 (mjun0812/flash-attention-prebuild-wheels), NOT on PyPI:
+#   flash_attn-2.8.3+cu128torch2.9-cp313-cp313-linux_x86_64.whl
+liger-kernel==0.8.2

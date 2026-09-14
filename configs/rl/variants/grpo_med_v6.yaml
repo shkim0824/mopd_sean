@@ -1,0 +1,136 @@
+# MED GRPO v6: C6-4ep init; ON-DISTRIBUTION pool = MedQA 4-option dev split (900 prompts, unseen by SFT) + MedQA-Evol mixed 3,046; val = remaining 372 dev items; 48x16 dyn sampling bm 2; 200 steps.
+# Changes vs grpo_med_4b.yaml, each backed by the 2026-09-09 RL-failure investigation:
+#   pool  : prompts disjoint from the SFT set (m23k-MedMCQA + long-stem MedMCQA), pre-screened to
+#           policy pass@8 in [1,7]; val = MedQA 4-option dev (1,272), never the RL distribution
+#   signal: 48 prompts x G=16 (768 rollouts) + DAPO dynamic sampling (2x over-generation,
+#           zero-std groups dropped) instead of 32 x 8 with 40-60% dead groups
+#   optim : lr 1e-6 (was 3e-6), one optimizer step per rollout batch (on-policy), clip 0.2/0.28,
+#           no KL (DAPO/II-Medical/Skywork), TIS kept
+#   length: 10k cap with a 2k soft overlong buffer (medical CoT saturates near 4k tokens)
+defaults: /opt/nemo-rl/examples/configs/grpo_math_1B.yaml
+
+grpo:
+  num_prompts_per_step: 48
+  num_generations_per_prompt: 16
+  max_num_epochs: 100                # steps cap governs (~1.5 epochs of the screened pool)
+  max_num_steps: 200
+  normalize_rewards: true
+  use_leave_one_out_baseline: true
+  val_period: 10
+  val_at_start: true
+  max_val_samples: 372              # full MedQA 4-option dev
+  val_batch_size: 372
+  overlong_filtering: false
+  advantage_clip_low: -20
+  advantage_clip_high: 20
+  use_dynamic_sampling: true         # DAPO: keep only prompt groups with non-zero reward std
+  dynamic_sampling_max_gen_batches: 3
+  batch_multiplier: 2                # dev prompts are unscreened
+  reward_shaping:
+    enabled: true
+    overlong_buffer_length: 2048
+    overlong_buffer_penalty: 1
+    max_response_length: ${policy.max_total_sequence_length}
+
+loss_fn:
+  reference_policy_kl_penalty: 0.0
+  ratio_clip_min: 0.2
+  ratio_clip_max: 0.28
+  use_importance_sampling_correction: true
+  truncated_importance_sampling_type: "tis"
+  truncated_importance_sampling_ratio: 5
+  truncated_importance_sampling_ratio_min: 0.2
+  sequence_level_importance_ratios: false
+  token_level_loss: true
+
+checkpointing:
+  enabled: true
+  checkpoint_dir: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/outputs/rl/grpo_med_v6_4b"
+  metric_name: "val:accuracy"
+  higher_is_better: true
+  keep_top_k: 1000                   # keep ALL checkpoints
+  save_period: 25
+  model_save_format: "safetensors"
+  save_consolidated: true
+
+policy:
+  model_name: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/models/teacher-med"
+  tokenizer:
+    name: ${policy.model_name}
+  train_global_batch_size: 768       # 48 prompts x G=16: ONE optimizer update per GRPO step
+  train_micro_batch_size: 1
+  logprob_batch_size: 1
+  max_total_sequence_length: 10240
+  precision: "bfloat16"
+  sequence_packing:
+    enabled: true
+    train_mb_tokens: 16384
+    logprob_mb_tokens: 16384
+  dtensor_cfg:
+    enabled: true
+    activation_checkpointing: true
+    tensor_parallel_size: 2
+    context_parallel_size: 1
+  optimizer:
+    name: "torch.optim.AdamW"
+    kwargs:
+      lr: 1.0e-6
+      weight_decay: 0.0
+      betas: [0.9, 0.999]
+      eps: 1e-8
+  scheduler:
+    - name: "torch.optim.lr_scheduler.LinearLR"
+      kwargs:
+        start_factor: 0.1
+        end_factor: 1.0
+        total_iters: 10
+    - name: "torch.optim.lr_scheduler.ConstantLR"
+      kwargs:
+        factor: 1.0
+        total_iters: 10000000000
+    - milestones: [10]
+  generation:
+    backend: "vllm"
+    max_new_tokens: ${policy.max_total_sequence_length}
+    temperature: 1.0
+    top_p: 1.0
+    top_k: null
+    vllm_cfg:
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.6
+      max_model_len: ${policy.max_total_sequence_length}
+      enforce_eager: false
+
+data:
+  max_input_seq_length: ${policy.max_total_sequence_length}
+  shuffle: true
+  train:
+    dataset_name: ResponseDataset
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/rl_pools/med_v6_train.jsonl"
+    input_key: input
+    output_key: output
+    split_validation_size: 0
+    processor: "math_hf_data_processor"
+    env_name: "domain_exactmatch"
+  validation:
+    dataset_name: ResponseDataset
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/rl_pools/med_v6_val.jsonl"
+    input_key: input
+    output_key: output
+    processor: "math_hf_data_processor"
+    env_name: "domain_exactmatch"
+  default:
+    prompt_file: null
+    system_prompt_file: null
+
+env:
+  domain_exactmatch:
+    num_workers: 8
+
+logger:
+  log_dir: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/logs/nemo/nemo_med_v6"
+  tensorboard_enabled: true
+
+cluster:
+  gpus_per_node: 8
+  num_nodes: 4

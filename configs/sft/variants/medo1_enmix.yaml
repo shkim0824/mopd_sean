@@ -1,0 +1,36 @@
+# medical-o1-reasoning-SFT (FreedomIntelligence, GPT-4o complex-CoT, verifier-checked) continued SFT of Qwen3-4B-OT3.
+# arm=enmix  data=en_mix_messages.jsonl  (decontaminated vs MedQA/MedXpertQA/PubMedQA test; CJK/dup dropped)
+# Rows are short (~770 tok p50, max ~1.9k) -> 1 node, pd2 = 16 bins/step (~85 rows/step, ~225 steps/epoch),
+# lr 5e-6 (HuatuoGPT-o1 SFT scale), warmup 5%, cosine, 3 epochs, save each epoch.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {medo1: data/sft_med_o1/en_mix_messages.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 4096
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_medo1_enmix
+  epochs: 3.0
+  lr: 5.0e-6
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

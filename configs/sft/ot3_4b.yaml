@@ -1,0 +1,38 @@
+# OpenThoughts3-1.2M general SFT — Qwen3-4B-Base. USER-DECIDED FINAL HPs (2026-09-02):
+#   8 nodes (64 GPU, ZeRO-2 DP) on n041-066, job name sean-sft-4b
+#   lr 8e-5 (official OpenThinker3-7B value), 2 epochs, global batch 512 bins (~8.1M tok/step),
+#   warmup 0.05 cosine, ckpt every 100 steps (keep ALL), resume auto.
+# Data/cutoff rationale unchanged — see docs/OT3_SFT.md:
+#   cutoff 16384 + flatten packing (official; 62% of rows end mid-<think> at QwQ's 16K cap),
+#   long completions right-truncated WITHOUT eos, targets carry native <think> tags.
+# 2 epochs x 1,123,375 bins / 512 = ~4,388 optimizer steps; ~35.6B tokens @ ~240k tok/s
+# (8-node DP) = ~41 h -> expect kill/resume cycles (resume auto + scripts/babysit_jobs.sh).
+model:
+  base: models/Qwen3-4B-Base
+  attn: auto                            # flash_attention_2 (required by packing=flatten)
+data:
+  cache_dir: data/train/ot3_cache_len16384   # built 2026-09-02: 1.2M examples / 17.79B tok / fill 96.7%
+  max_len: 16384
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/ot3_qwen3-4b
+  epochs: 2.0                           # user 2026-09-02
+  lr: 8.0e-5                            # user 2026-09-02 (== official OpenThinker3-7B)
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 4                      # 4 bins x 64 GPU = 256 bins/micro-step
+  grad_accum: 2                         # x2 -> 512 bins ~ 8.1M tok / optimizer step (user: gbs 512)
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: steps
+  save_steps: 100                       # user: every 100 steps (~1 h at 8 nodes); keep ALL
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

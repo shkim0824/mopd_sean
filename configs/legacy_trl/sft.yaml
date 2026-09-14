@@ -1,0 +1,37 @@
+# Stage 1 general SFT — DEFAULT = 2 nodes (16 GPU, pure DP ZeRO-2), per_device_bs 2 (scripts/sft_2node.sbatch).
+# Acceleration recipe from the 2026-08-30 throughput study (docs/SFT_SPEED.md in mopd_sftopt): flash-attn 2.8.3 +
+# Liger fused linear-CE (no [T,151936] fp32 logits) + padding-free "flatten" packing (position_ids reset per example
+# -> varlen block-diagonal attention, loss-equivalent). 1-node pd4 measured 137.6 s/step, 30.4k tok/s.
+model:
+  base: models/Qwen3-4B-Base           # 8B later
+  attn: auto                           # flash_attention_2 when installed (required by packing=flatten)
+data:
+  sources:
+    math: data/train/sft_math.jsonl    # 93.5k R1 traces (open-r1/Mixture-of-Thoughts:math)
+    code: data/train/sft_code.jsonl    # 81.4k R1 traces (open-r1/Mixture-of-Thoughts:code)
+    if:   data/train/sft_if.jsonl      # gpt-oss-120b distilled + verifier-filtered (mopd.data.distill_if_sft)
+  weights: null                        # null = use everything
+  max_rows: null
+  max_len: 32768                       # paper max seq len; one flatten bin = up to 32k tokens (~3.6 examples)
+  thinking: true
+  packing: flatten                     # padding-free packing (needs flash_attention_2)
+  seed: 42
+train:
+  output: outputs/sft/mot_qwen3-4b
+  epochs: 1.0                          # user decision 2026-08-30 (1.6B tokens/epoch ~ 8 h on 2 nodes)
+  lr: 2.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 2                     # 2 bins/GPU x 16 GPU = 32 bins ~ 115 examples ~ 1.05M tokens / optimizer step
+  grad_accum: 1                        # (2-node default; on 1 node use per_device_bs 4 or grad_accum 2)
+  liger: true                          # fused linear-CE + RMSNorm/RoPE/SwiGLU
+  grad_ckpt: true                      # off -> OOM even at pd1
+  logging_steps: 5
+  save_strategy: steps
+  save_steps: 100                      # user 2026-08-30: every 100 steps (~2 h on 2 nodes), resumable
+  save_total_limit: null               # user 2026-08-30: keep ALL checkpoints (~50 GB each)
+  save_only_model: false
+  resume: auto                         # latest complete checkpoint-N in train.output (k-sean jobs get killed)
+  seed: 42
