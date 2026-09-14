@@ -174,6 +174,7 @@
 | file | overlay/README.md | README.md | consolidated README |
 | file | overlay/.gitignore | .gitignore | git ignore list (assets, benchmark clones) |
 | file | overlay/docs/LAYOUT.md | docs/LAYOUT.md | tree + maps + verification |
+| file | overlay/docs/CONSOLIDATION.md | docs/CONSOLIDATION.md | how the merge was done |
 | file | mopd_domains/docs/DATASETS.md | docs/DATASETS.md |  |
 | file | mopd/submit/README.md | docs/SUBMIT_RECIPES_legacy.md |  |
 | file | mopd/README.md | docs/README_mopd_original.md |  |
