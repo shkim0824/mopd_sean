@@ -4,7 +4,7 @@
 # starts from the previous round's weights (recipe: resume_mode=disable). Overridden per round by the driver:
 #   policy.model_name, data.train.data_path, checkpointing.checkpoint_dir, logger.log_dir
 # Recipe HPs kept: 128 prompts x 4 rollouts per step, lr 1e-6 constant (no warmup), KL 0.001 to the round init,
-# prompt 2048 / response 2048, T=1.0 rollouts, binary grader reward, no <think> gate.
+# T=1.0 rollouts, binary grader reward, no <think> gate. Response budget 8192 (recipe 2048 assumed a short-thinking Qwen3-8B).
 defaults: /opt/nemo-rl/examples/configs/grpo_math_1B.yaml
 
 grpo:
@@ -51,9 +51,9 @@ policy:
   tokenizer:
     name: ${policy.model_name}
   train_global_batch_size: 512       # 128 prompts x 4 rollouts: one optimizer update per GRPO step
-  train_micro_batch_size: 2
-  logprob_batch_size: 4
-  max_total_sequence_length: 4096    # prompt <= 2048 + response <= 2048 (recipe)
+  train_micro_batch_size: 1
+  logprob_batch_size: 2
+  max_total_sequence_length: 10240   # prompt <= 2048 + response <= 8192 (recipe: 2048/2048 for Qwen3-8B; OT3 thinks long)
   precision: "bfloat16"
   dtensor_cfg:
     enabled: true
@@ -76,7 +76,7 @@ policy:
         total_iters: 10000000000
   generation:
     backend: "vllm"
-    max_new_tokens: 2048
+    max_new_tokens: 8192
     temperature: 1.0
     top_p: 1.0
     top_k: null
@@ -91,7 +91,7 @@ data:
   shuffle: true
   train:
     dataset_name: ResponseDataset
-    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/rl_pools/ihc_4b_r0.jsonl"
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/domains/ih-challenge/heldout_attacks_ot3-4b.jsonl"
     split_validation_size: 0
     processor: "mopd_ihc_processor"
     env_name: "mopd_ihc"
@@ -115,4 +115,4 @@ logger:
 
 cluster:
   gpus_per_node: 8
-  num_nodes: 2
+  num_nodes: 4

@@ -46,14 +46,17 @@ mopd_sean/
 
 ```bash
 cd $S/mopd_sean                      # S = /mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean
-source scripts/_common.sh            # REPO, S, IMG, NEMO_IMG, VENV, prefer <n>, JP=k-sean
-bash setup_cluster.sh                # symlink farm + offline assets (idempotent)
-sbatch -J k-sean-selfcheck $(prefer 1) scripts/selfcheck.sbatch      # imports · CPU tests · config paths
+source scripts/_common.sh            # REPO, S, IMG, NEMO_IMG, VENV, placement <n> (sets PLACE_OPT + JP)
+placement 1; sbatch ${PLACE_OPT} -J "${JP}-selfcheck" scripts/selfcheck.sbatch      # imports · CPU tests · config paths
 ```
+The tree is self-contained since 2026-09-14 evening: `models/`, `data/`, `outputs/`, `logs/` are real directories (every
+checkpoint, pool and result of the study lives here; the three original repositories were retired to `$S/past/misc`).
 
 Runtime: the team training container + `$S/.venv/mopd` (trl 0.29, vLLM, transformers 4.57) for SFT / OPD / eval, and the
-NeMo-RL 0.7 container for RL teachers. Jobs are named `k-sean-*`, placed with `$(prefer N)`, keep every checkpoint,
-and report performance at temperature 1.0 (domain benchmarks) or the Qwen3 thinking preset (general benchmarks).
+NeMo-RL 0.7 container for RL teachers. Node placement (`placement N` in `scripts/_common.sh`, three tiers): the assigned
+nodes n227-236 (job prefix `sean-`), else n041-066 when it has room (`k-sean-`), else the whole cluster (`k-sean-`).
+Every run keeps every checkpoint and reports performance at temperature 1.0 (domain benchmarks) or the Qwen3 thinking
+preset (general benchmarks).
 
 ## Recipes
 
@@ -79,7 +82,7 @@ bash scripts/teacher_sft_stage.sh gen-med-35b-k4 data/distill_pools/med_pool.jso
   data/sft_distill/med_sft.jsonl configs/sft/distill_med_c6_4ep.yaml 2 4               # verified traces -> SFT
 bash scripts/sft_auto_eval.sh distill_med_c6_4ep medqa epochs 4                          # eval each epoch
 ```
-**GRPO with NeMo-RL** (finance, IF, second stage of law):
+**GRPO with NeMo-RL** (finance, IF, medical / law RL-only variants):
 ```bash
 CONFIG=configs/rl/grpo_fin.yaml         NODES=4 bash scripts/rl_nemo.sh
 CONFIG=configs/rl/grpo_law_distill.yaml NODES=4 bash scripts/rl_nemo.sh
@@ -87,7 +90,18 @@ CONFIG=configs/rl/grpo_if.yaml          NODES=4 bash scripts/rl_nemo.sh
 CONFIG=configs/rl/grpo_math_v3.yaml     NODES=8 JUDGE=1 bash scripts/rl_nemo.sh          # + 1 judge node
 bash scripts/rl_auto_eval.sh rl-fin outputs/rl/grpo_fin_4b models/Qwen3-4B-OT3 finqa 50 100 150 200
 ```
-A NeMo step becomes an HF model dir with `scripts/mk_eval_model.sh`; final teachers are pinned as `models/teacher-{law,fin,if,med}`.
+**Safety teacher (IH-Challenge, online attack loop)** — lena's VerIH/RLVR recipe on this stack, 5 rounds x 40 steps = 200:
+```bash
+PYTHONPATH=. python -m mopd.data.domains.prep_ihc --import-from <ih-challenge dir>      # skeletons: train 6,059 (5 rounds) + held-out 673
+SKELETONS=data/domains/ih-challenge/skeletons_heldout.jsonl DEFENDER=models/Qwen3-4B-OT3 \
+  OUT=data/domains/ih-challenge/heldout_attacks_ot3-4b.jsonl sbatch -J sean-ihc-synth-heldout scripts/ihc_synth.sbatch   # fixed benchmark attacks
+SIZE=4b BASE=models/Qwen3-4B-OT3 setsid nohup bash scripts/rl_ihc_loop.sh > logs/ihc_loop_4b.log 2>&1 &   # rounds: synth -> GRPO -> next defender
+```
+Each round re-synthesises the attacks against the current defender (frozen Qwen3-4B attacker, budget 3), trains GRPO
+(`configs/rl/grpo_ihc.yaml`: 128 prompts x 4 rollouts, lr 1e-6, KL 0.001, response 8k) from the previous round's weights with a
+fresh optimizer, and pins the result as `models/teacher-safety-<size>`. Benchmark: `BENCHMARKS=ihc` in `scripts/eval_domain.sbatch`
+(held-out skeletons with fixed attacks; score = fraction of prompts where the higher-priority instruction was followed).
+A NeMo step becomes an HF model dir with `scripts/mk_eval_model.sh`; final teachers are pinned as `models/teacher-{law,law-sft,fin,if,med,safety-4b}`.
 </details>
 
 <details>
@@ -143,7 +157,7 @@ Report convention: one model per row, base and teacher rows included, s̃ = mean
 
 - Configs: SFT / OPD / MOPD configs use repo-relative paths; NeMo-RL configs use absolute paths (ray workers).
   `python3 scripts/cfgval.py --check-paths` validates every path of every config.
-- `models/`, `data/`, `outputs/`, `logs/_orig_*` are symlinks into the asset store: writes go through to the originals.
+- `models/`, `data/`, `outputs/`, `logs/` are real directories inside the tree (no symlink farm any more).
 - Never strip optimizer states of a run that may still resume; never write into `/home/deploy` or `/tmp`.
 
 ## How this tree came to be

@@ -15,18 +15,19 @@ mopd_sean/
 │   ├── common/      chat.py (chat-format contract)  config.py (YAML + --override)  io.py  resume.py (resume policy)
 │   ├── data/        prep_openthoughts3.py  build_ot3_verify.py  prep_train.py  prep_eval.py  distill_if_sft.py
 │   │   └── domains/ prep_rl_pools.py (med/law/fin/IF verifiable pools)  prep_med_sft.py  build_pools.py (distillation prompt pools)
+│   │                prep_ihc.py (IH-Challenge skeletons, held-out split, rounds)  ihc_attack_synth.py (online attack synthesis, vLLM DP)
 │   ├── sft/         dataset.py  ot3_cache.py (memmap packed cache)  train_sft.py (accelerate + ZeRO-2; every SFT stage)
 │   ├── teacher/     gen_teacher.py (vLLM k-sample traces)  reject_filter.py  select_traces.py  merge_teachers.py (weighted average)
 │   ├── rl/          rewards.py  train_grpo.py (trl GRPO, legacy)
 │   │   └── nemo/    run_grpo.py (NeMo-RL entrypoint: registers envs + processors, delegates to /opt/nemo-rl/examples/run_grpo.py)
 │   │                prep_math_data.py  prep_3dom_data.py  sweep_nano_worker.py
 │   │       ├── envs/        exactmatch_environment.py (med/law/fin)  if_environment.py + if_verify_worker.py  code_environment.py
-│   │       │                math_with_judge_environment.py  processors.py
+│   │       │                math_with_judge_environment.py  ihc_environment.py (safety: per-row grader)  processors.py
 │   │       └── judge_eval/  build_pairs.py  run_judge_eval.py (LLM-judge validation)
 │   ├── distill/     loss.py (PG / top-k objectives)  placement.py (teacher server placement)  teacher_client.py (prefill logprobs)
 │   │                trainer.py (MOPDTrainer on trl GRPOTrainer)  train_opd.py (domain OPD / MOPD driver)  train_mopd.py (paper driver, legacy)
 │   ├── graders/     math_grader.py  code_grader.py (LCB harness)  if_grader.py  ot3_grader.py  pyexec_grader.py  sandbox.py (Landlock + RLIMIT)
-│   │   └── domains/ extract.py (answer extraction)  graders.py (official MedQA / CaseHOLD / FinQA / ... scoring)
+│   │   └── domains/ extract.py (answer extraction)  graders.py (official MedQA / CaseHOLD / FinQA / ... scoring)  ihc_grader.py (IH-Challenge grader exec, forked timeout)
 │   └── eval/        benchmarks.py  prompts.py  generate.py  run_eval.py (6-bench)
 │       └── domains/ benches.py (domain benchmark loaders)  run_domain_eval.py (sharded vLLM runner)
 ├── scripts/
@@ -42,12 +43,14 @@ mopd_sean/
 │   ├── eval_domain.sbatch    domain benches, N nodes x 8 DP workers, T=1.0          eval_6bench.sbatch   AIME/LCB/IFEval/IFBench
 │   ├── eval_big.sbatch       big / MoE model domain eval (NeMo container, TP)       sft_auto_eval.sh     eval SFT ckpts (steps or epochs)
 │   ├── selfcheck.sbatch      imports (both containers) + CPU tests + config paths   cfgval.py            stdlib YAML reader, --check-paths
+│   ├── ihc_synth.sbatch      IH-Challenge attack synthesis (1 node, 8 DP shards)    rl_ihc_loop.sh       safety teacher: 5 rounds x 40 GRPO steps
+│   ├── make_1p7b_teachers.sh 1.7B teacher configs + submissions
 │   └── legacy/               grpo_trl.sbatch, mopd_trl.sbatch (paper recipe, trl)
 ├── configs/
 │   ├── accelerate_zero2.yaml  eval.yaml
 │   ├── sft/    ot3_4b, ot3_1p7b_18k | distill_law_2ep, distill_med_c6_4ep | warmup_law, warmup_med, warmup_med_c6k1_4ep (A), warmup_med_c6k3_4ep (B), warmup_mix_lawmed
 │   │   └── variants/  24 ablations (med candidates c1-c7, v2a/b, medo1, 35B-trace control, old-pool warm-up, 1.7B 16k)
-│   ├── rl/     grpo_law_distill, grpo_law_rlonly, grpo_fin, grpo_if, grpo_code, grpo_math_v3   (NeMo-RL; absolute paths)
+│   ├── rl/     grpo_law_distill, grpo_law_rlonly, grpo_fin, grpo_if, grpo_ihc (safety round), grpo_code, grpo_math_v3, *_1p7b   (NeMo-RL; absolute paths)
 │   │   └── variants/  15 (32k rollouts, med v2-v6 pools, law phase 2, nemotron math / 3-dom, math v2)
 │   ├── opd/    {law,fin,if}_{pg,top64,top16}, med_pg, law_pg_rlteacher, law_pg_from_warmup75, med_pg_from_warmup{150,A561,B2164}
 │   │   └── variants/  law v1 + hyphen-named v2 clones, old-pool med runs
@@ -61,11 +64,11 @@ mopd_sean/
 ├── tests/         test_distill_cpu  test_domain_graders  test_graders_quick  test_ot3_cache  test_ot3_grader  test_sandbox_canary  test_sft_dataset
 ├── docs/          LAYOUT.md (this)  DESIGN.md  DATA.md  DATASETS.md  INFRA.md  OT3_SFT.md  SFT_SPEED.md  SUBMIT_RECIPES_legacy.md  README_*_original.md
 ├── env/           requirements*.txt  setup_mopd_env.sbatch  verify_nemo_container.sbatch  nltk_data/  tiktoken/  nemo_extras/{vendor,third_party_py}
-├── models/        Qwen3-4B-OT3  Qwen3-4B  Qwen3-4B-Base  Qwen3-1.7B  Qwen3-1.7B-Base  Qwen3-1.7B-OT3  teacher-{law,law-rlonly,fin,if,med}
-│                  merged-4teachers-{uniform,w4411}  rl_steps/<eval-ready RL step dirs>                       (symlinks)
-├── data/          eval  train  domains  rl_pools  distill_pools  sft_distill{,_v2,_v3}  sft_med  sft_med_o1  sft_warmup  rl3dom  nemotron_math  raw/  (symlinks)
-├── outputs/       opd/  eval_domain/  eval_6bench/  teacher_gen/  sft/<run>  rl/<run>                                      (symlinks)
-├── logs/          this tree's job logs + _orig_{mopd,mopd_domains,mopd_rl} (symlinks)     nemo/ (ray logs)
+├── models/        Qwen3-4B-OT3  Qwen3-4B  Qwen3-4B-Base  Qwen3-1.7B  Qwen3-1.7B-Base  Qwen3-1.7B-OT3  teacher-{law,law-sft,law-rlonly,fin,if,med}
+│                  merged-4teachers-{uniform,uniform-lawsft,w4411}  rl_steps/<eval-ready RL step dirs>          (real directories since the asset move)
+├── data/          eval  train  domains (+ ih-challenge)  rl_pools  distill_pools  sft_distill{,_v2,_v3}  sft_med  sft_med_o1  sft_warmup  rl3dom  nemotron_math  raw/  (real)
+├── outputs/       opd/  eval_domain/  eval_6bench/  teacher_gen/  sft/<run>  rl/<run>                                      (real)
+├── logs/          this tree's job logs + mopd/ mopd_domains/ mopd_rl/ (the retired repos' logs)     nemo/ (ray logs)
 └── tmp/cache      per-job vLLM / inductor / triton caches (tools/disk/clean_caches.sh)
 ```
 

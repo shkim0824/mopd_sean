@@ -305,3 +305,21 @@ difflib ratio to the origin file (1.00 = identical).
 | `tools/watch/watch_dom.sh` | new (from scratchpad/watch_dom.sh) | scratchpad/watch_dom.sh | 14 | 0 | 0 |  |
 | `tools/watch/watch_full.sh` | new (from scratchpad/watch_full.sh) | scratchpad/watch_full.sh | 16 | 0 | 0 |  |
 | `tools/watch/watch_opd_resub.sh` | new (from scratchpad/watch_opd_resub.sh) | scratchpad/watch_opd_resub.sh | 30 | 0 | 0 |  |
+
+## 7. Phase 2 (2026-09-14 evening): the assets moved in, the old repositories retired
+
+The symlink farm was a transition device. Once no job depended on the original paths any more, every asset was moved
+INTO the tree (same filesystem, so directory moves are renames; the file-level symlink directories of the teachers and
+RL steps were materialised as hard links, no data was copied twice), the three repositories were reduced to their code
+shells and archived under `$S/past/misc/old_repos_2026-09-14/`, and `setup_cluster.sh` became unnecessary.
+
+| tree path | now holds |
+|---|---|
+| `models/` | the base models (`$S/models/Qwen3-*`), `Qwen3-1.7B-OT3`, the teachers as real directories, the merges, `rl_steps/` |
+| `data/` | every pool / SFT set / benchmark source of the three repos, the raw HF datasets under `data/raw/`, `domains/ih-challenge/` |
+| `outputs/` | `opd/` (all OPD / MOPD runs), `sft/` (every SFT run, incl. the OT3 runs as `ot3_qwen3-*`), `rl/` (every NeMo-RL run), `eval_domain/`, `eval_6bench/`, `teacher_gen/` |
+| `logs/` | this tree's logs plus the retired repos' logs (`logs/mopd*`) and the ray logs |
+
+Rules that follow from it: nothing under `models/ data/ outputs/` is a link any more (deleting deletes); the 1.2 TB of
+per-job compile caches of the old `mopd_domains/tmp/cache` were deleted (regenerable); configs are unchanged because they
+were already written against these tree paths.

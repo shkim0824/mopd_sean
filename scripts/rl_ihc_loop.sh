@@ -1,6 +1,6 @@
 #!/bin/bash
 # IH-Challenge (safety) teacher = the online alternating loop of lena's recipe (RECIPES.md §2.2) on our stack:
-#   round r:  synthesise attacks vs the CURRENT defender (self-play attacker, budget 3)  -> data/rl_pools/ihc_<size>_r<r>.jsonl
+#   round r:  synthesise attacks vs the CURRENT defender (frozen Qwen3-4B attacker, budget 3)  -> data/rl_pools/ihc_<size>_r<r>.jsonl
 #             GRPO for STEPS steps initialised from the current defender (fresh optimizer)   -> outputs/rl/<name>/r<r>/step_<STEPS>
 #             HF view of the new weights (old-schema config)                                -> models/rl_steps/<name>-r<r>-step<STEPS>
 #             becomes the next round's defender
@@ -10,7 +10,7 @@
 # Resume: rounds whose step_<STEPS> exists are skipped; a round whose synth file exists skips the synthesis.
 set -u
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"; source "${_here}/_common.sh"; cd "${REPO}"
-SIZE="${SIZE:-4b}"; BASE="${BASE:-models/Qwen3-4B-OT3}"; ROUNDS="${ROUNDS:-5}"; STEPS="${STEPS:-40}"; NODES="${NODES:-2}"
+SIZE="${SIZE:-4b}"; BASE="${BASE:-models/Qwen3-4B-OT3}"; ROUNDS="${ROUNDS:-5}"; STEPS="${STEPS:-40}"; NODES="${NODES:-4}"; ATTACKER="${ATTACKER:-models/Qwen3-4B}"
 NAME="${NAME:-grpo_ihc_${SIZE}}"; CONFIG="${CONFIG:-configs/rl/grpo_ihc.yaml}"; BUDGET="${BUDGET:-3}"
 SK="${SK:-data/domains/ih-challenge}"; VAL="${VAL:-${SK}/heldout_attacks_ot3-4b.jsonl}"
 [[ -f "${VAL}" ]] || { echo "ABORT: validation/benchmark attacks missing: ${VAL} (run the held-out synth first)"; exit 1; }
@@ -25,14 +25,16 @@ for ((r = 0; r < ROUNDS; r++)); do
   if [[ -f "${HF}/config.json" ]]; then echo "round ${r}: done already (${HF})"; defender="$(realpath "${HF}")"; continue; fi
   # ---- 1. attack synthesis vs the current defender
   if [[ ! -s "${SYN}" ]]; then
-    J=$(SKELETONS="${SK}/skeletons_train_r${r}.jsonl" DEFENDER="${defender}" OUT="${SYN}" BUDGET="${BUDGET}" \
-        sbatch --parsable -J "${JP}-ihc-synth-${SIZE}-r${r}" $(place 1) scripts/ihc_synth.sbatch)
+    placement 1
+    J=$(SKELETONS="${SK}/skeletons_train_r${r}.jsonl" DEFENDER="${defender}" ATTACKER="${ATTACKER}" OUT="${SYN}" BUDGET="${BUDGET}" \
+        sbatch --parsable -J "${JP}-ihc-synth-${SIZE}-r${r}" ${PLACE_OPT} scripts/ihc_synth.sbatch)
     echo "$(date '+%H:%M') round ${r}: synth job ${J} (defender ${defender})"; wait_job "${J}" || { echo "ABORT: synth failed"; exit 2; }
   fi
   N=$(wc -l < "${SYN}"); echo "$(date '+%H:%M') round ${r}: ${N} conflict prompts in ${SYN}"; [[ "${N}" -ge 100 ]] || { echo "ABORT: too few rows"; exit 2; }
   # ---- 2. GRPO round (fresh optimizer, init = current defender)
   if [[ ! -d "${CK}/step_${STEPS}" ]]; then
-    J=$(CONFIG="${CONFIG}" NODES="${NODES}" RUN_NAME="${NAME}_r${r}" \
+    placement "${NODES}"
+    J=$(JOB_PREFIX="${JP}" EXC="${PLACE_OPT#--exclude=}" CONFIG="${CONFIG}" NODES="${NODES}" RUN_NAME="${NAME}_r${r}" \
         OVERRIDES="policy.model_name=${defender} data.train.data_path=$(realpath "${SYN}") data.validation.data_path=$(realpath "${VAL}") checkpointing.checkpoint_dir=${REPO}/${CK} logger.log_dir=${REPO}/logs/nemo/${NAME}_r${r} grpo.max_num_steps=${STEPS}" \
         bash scripts/rl_nemo.sh | grep -oE "[0-9]{6,}" | tail -1)
     echo "$(date '+%H:%M') round ${r}: GRPO job ${J} -> ${CK}"; wait_job "${J}" || echo "WARNING: GRPO job ${J} did not end COMPLETED (checking for step_${STEPS} anyway)"

@@ -69,17 +69,21 @@ wait_http() {
 #              -> if >= n idle nodes there: pin the job to that range, job prefix "sean-"
 #   2. RANGE = ib-a100-cluster-a-n[041-066]  -> if >= n idle nodes there: pin to that range, prefix "k-sean-" (never cancel others)
 #   3. otherwise: no node exclusion at all (whole cluster), prefix "k-sean-"
-# place <n_nodes> prints the sbatch --exclude option and sets JP (job prefix) for the caller:  J=$(place 4); sbatch $J -J "${JP}-..."
+# placement <n_nodes> sets PLACE_OPT (sbatch --exclude option, may be empty) and JP (job prefix) in the CALLER's shell:
+#   placement 4; sbatch ${PLACE_OPT} -J "${JP}-opd-<run>" ...        (do not use $(...): a subshell cannot set JP)
+# place <n_nodes> only prints the option (JP unchanged) for one-liners that set the prefix themselves.
 MINE_RANGE="ib-a100-cluster-a-n[227-236]"; MINE_EXCL="ib-a100-cluster-a-n[001-226,237-258]"
 RANGE_41_66="ib-a100-cluster-a-n[041-066]"; RANGE_EXCL="ib-a100-cluster-a-n[001-040,067-258]"
 idle_in() { local v; v=$(sinfo -h -n "$1" -t idle -o "%D" 2>/dev/null | head -1); echo "${v:-0}"; }
-place() {
+placement() {
   local n="${1:-1}" mine range
   mine=$(idle_in "${MINE_RANGE}"); range=$(idle_in "${RANGE_41_66}")
-  if [[ "${mine}" -ge "${n}" ]]; then JP="sean"; echo "--exclude=${MINE_EXCL}"
-  elif [[ "${range}" -ge "${n}" ]]; then JP="k-sean"; echo "--exclude=${RANGE_EXCL}"
-  else JP="k-sean"; echo ""; fi
+  if [[ "${mine}" -ge "${n}" ]]; then JP="sean"; PLACE_OPT="--exclude=${MINE_EXCL}"; PLACE_TIER="mine(n227-236)"
+  elif [[ "${range}" -ge "${n}" ]]; then JP="k-sean"; PLACE_OPT="--exclude=${RANGE_EXCL}"; PLACE_TIER="n041-066"
+  else JP="k-sean"; PLACE_OPT=""; PLACE_TIER="whole-cluster"; fi
 }
+place() { placement "$1"; echo "${PLACE_OPT}"; }
+
 # prefer <n_nodes>: kept for old call sites = tier 2/3 only (never places on the assigned range)
 prefer() {
   local idle; idle=$(idle_in "${RANGE_41_66}")

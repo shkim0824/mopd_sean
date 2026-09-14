@@ -1,0 +1,130 @@
+# 1.7B RL-only teacher (user 2026-09-14): = configs/rl/grpo_fin.yaml with Qwen3-1.7B-OT3 as the policy init; data / recipe unchanged
+# DOMAIN GRPO (fin): Qwen3-4B-OT3 on the fin exact-match pool (mopd_domains).
+# Inherits the user-confirmed math_v2 recipe; changes: 32 prompts/step (user),
+# G=8, gbs 256, deterministic domain_exactmatch env (no judge), 4 ray nodes.
+defaults: /opt/nemo-rl/examples/configs/grpo_math_1B.yaml
+
+grpo:
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 8
+  max_num_epochs: 100                # steps cap governs; 200 steps ~ 3.4 epochs of 3,765 rows
+  max_num_steps: 200
+  normalize_rewards: true
+  use_leave_one_out_baseline: true
+  val_period: 25
+  val_at_start: true
+  max_val_samples: 100
+  val_batch_size: 100
+  overlong_filtering: false
+  advantage_clip_low: -20
+  advantage_clip_high: 20
+  use_dynamic_sampling: false
+  reward_shaping:
+    enabled: true
+    overlong_buffer_length: 1024
+    overlong_buffer_penalty: 1
+    max_response_length: ${policy.max_total_sequence_length}
+
+loss_fn:
+  reference_policy_kl_penalty: 0.0
+  ratio_clip_min: 0.2
+  ratio_clip_max: 0.28
+  use_importance_sampling_correction: true
+  truncated_importance_sampling_type: "tis"
+  truncated_importance_sampling_ratio: 5
+  truncated_importance_sampling_ratio_min: 0.2
+  sequence_level_importance_ratios: false
+  token_level_loss: true
+
+checkpointing:
+  enabled: true
+  checkpoint_dir: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/outputs/rl/grpo_fin_1p7b"
+  metric_name: "val:accuracy"
+  higher_is_better: true
+  keep_top_k: 1000                   # > total ckpts (20) -> effectively keep ALL
+  save_period: 10
+  model_save_format: "safetensors"
+  save_consolidated: true
+
+policy:
+  model_name: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/models/Qwen3-1.7B-OT3"
+  tokenizer:
+    name: ${policy.model_name}
+  train_global_batch_size: 256       # 32 prompts x G=8: one optimizer update per GRPO step
+  train_micro_batch_size: 1
+  logprob_batch_size: 1              # 32k sequences: conservative (2 risked logprob OOM)
+  max_total_sequence_length: 16384
+  precision: "bfloat16"
+  sequence_packing:
+    enabled: true
+    train_mb_tokens: 16384
+    logprob_mb_tokens: 16384
+  dtensor_cfg:
+    enabled: true
+    activation_checkpointing: true
+    tensor_parallel_size: 2          # 32k-seq fp32 logits are 18.6GiB at TP1 (OOM'd 557363);
+                                     # TP2 vocab-shards the LM head -> ~9.3GiB/GPU
+    context_parallel_size: 1
+  optimizer:
+    name: "torch.optim.AdamW"
+    kwargs:
+      lr: 3.0e-6
+      weight_decay: 0.0
+      betas: [0.9, 0.999]
+      eps: 1e-8
+  scheduler:
+    - name: "torch.optim.lr_scheduler.LinearLR"
+      kwargs:
+        start_factor: 0.1
+        end_factor: 1.0
+        total_iters: 10
+    - name: "torch.optim.lr_scheduler.ConstantLR"
+      kwargs:
+        factor: 1.0
+        total_iters: 10000000000
+    - milestones: [10]
+  generation:
+    backend: "vllm"
+    max_new_tokens: ${policy.max_total_sequence_length}
+    temperature: 1.0
+    top_p: 1.0
+    top_k: null
+    vllm_cfg:
+      tensor_parallel_size: 1
+      gpu_memory_utilization: 0.6
+      max_model_len: ${policy.max_total_sequence_length}
+      enforce_eager: false
+
+data:
+  max_input_seq_length: ${policy.max_total_sequence_length}
+  shuffle: true                      # reshuffle each epoch (multi-epoch run, no curriculum)
+  train:
+    dataset_name: ResponseDataset
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/rl_pools/fin_train.jsonl"
+    input_key: input
+    output_key: output
+    split_validation_size: 0
+    processor: "math_hf_data_processor"
+    env_name: "domain_exactmatch"
+  validation:
+    dataset_name: ResponseDataset
+    data_path: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/data/rl_pools/fin_val.jsonl"
+    input_key: input
+    output_key: output
+    processor: "math_hf_data_processor"
+    env_name: "domain_exactmatch"
+  default:
+    prompt_file: null
+    system_prompt_file: null
+
+env:
+  domain_exactmatch:
+    num_workers: 8
+
+logger:
+  log_dir: "/mnt/datafs/ib-a100-cluster-a-pri/lmalign/personal/sean/mopd_sean/logs/nemo/grpo_fin_1p7b"
+  tensorboard_enabled: true
+
+cluster:
+  gpus_per_node: 8
+  num_nodes: 4

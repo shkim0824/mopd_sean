@@ -1,7 +1,7 @@
 #!/bin/bash
 # IH-Challenge attack synthesis for one training round (or for the held-out benchmark): 8 data-parallel vLLM shards on
-# one node (training container + mopd venv), then a merge step. Attacker = defender = the current policy (recipe v1
-# self-play) unless ATTACKER is given.
+# one node (training container + mopd venv), then a merge step. Attacker = models/Qwen3-4B (official, frozen) unless
+# ATTACKER is given (ATTACKER=<defender> = the recipe's v1 self-play); defender = the current policy.
 #   SKELETONS=data/domains/ih-challenge/skeletons_train_r0.jsonl DEFENDER=models/Qwen3-4B-OT3 OUT=data/rl_pools/ihc_r0_4b.jsonl \
 #     sbatch -J k-sean-ihc-synth-r0 $(place 1) scripts/ihc_synth.sbatch        (BUDGET=3 default; LIMIT=64 for a smoke)
 #SBATCH -N 1
@@ -13,7 +13,7 @@
 #SBATCH --output=logs/ihc-synth-%j.log
 MOPD_REPO="${MOPD_REPO:-${SLURM_SUBMIT_DIR:-$(pwd)}}"; source "${MOPD_REPO}/scripts/_common.sh"
 cd "${REPO}"; mkdir -p logs tmp/cache
-SKELETONS="${SKELETONS:?set SKELETONS}"; DEFENDER="$(realpath "${DEFENDER:?set DEFENDER}")"; ATTACKER="$(realpath "${ATTACKER:-${DEFENDER}}")"
+SKELETONS="${SKELETONS:?set SKELETONS}"; DEFENDER="$(realpath "${DEFENDER:?set DEFENDER}")"; ATTACKER="$(realpath "${ATTACKER:-models/Qwen3-4B}")"   # frozen official attacker (think off); ATTACKER=<defender> for self-play
 OUT="${OUT:?set OUT}"; BUDGET="${BUDGET:-3}"; LIMIT_ARG=""; [[ -n "${LIMIT:-}" ]] && LIMIT_ARG="--limit ${LIMIT}"
 mkdir -p "$(dirname "${OUT}")"
 NODE="$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -1)"
