@@ -11,7 +11,7 @@ AIME avg@32) is still available as ``--preset paper``.
 
 Examples
   python -m mopd.eval.run_eval --model outputs/sft/qwen3-8b --out outputs/eval/sft-8b
-  python -m mopd.eval.run_eval --model models/Qwen3-8B-Base --out outputs/eval_domain/base-8b-probe \\
+  python -m mopd.eval.run_eval --model models/Qwen3-8B-Base --out outputs/eval_6bench/base-8b-probe \\
          --benchmarks aime24,ifeval --limit 30 --n 1 --prompt-mode raw   # base-model probe
 """
 from __future__ import annotations
