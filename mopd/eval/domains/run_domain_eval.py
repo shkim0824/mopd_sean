@@ -6,8 +6,10 @@ Worker mode (one process per GPU, launched by the sbatch script):
 Aggregate mode (after all shards exist):
   python -m mopd.eval.domains.run_domain_eval --aggregate-only --benchmarks a,b --out O
 
-Sampling default = qwen-thinking eval convention (T=0.6, top_p 0.95, top_k 20),
-chat template with enable_thinking=True. Shards are resume-safe (skip existing).
+Sampling (2026-09-16) = the training rollouts: T=1.0 (``--temperature``), top_p 1.0, top_k
+disabled; chat template with enable_thinking=True. Shards are resume-safe (skip existing).
+NOTE every ``-T1`` dom3 directory on disk predates this and was produced with top_p 0.95 /
+top_k 20, so its numbers are not comparable cell-by-cell with a fresh run.
 """
 from __future__ import annotations
 
@@ -41,7 +43,9 @@ def worker(args) -> None:
     tok = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     llm = LLM(model=args.model, dtype="bfloat16", max_model_len=args.max_model_len,
               tensor_parallel_size=args.tp, gpu_memory_utilization=0.9, trust_remote_code=True)
-    sp = SamplingParams(temperature=args.temperature, top_p=0.95, top_k=20,
+    # training-matched sampling (2026-09-16): top_p 1.0, top_k disabled. Before that this
+    # runner used top_p 0.95 / top_k 20, which is what every `-T1` dom3 dir on disk holds.
+    sp = SamplingParams(temperature=args.temperature, top_p=args.top_p, top_k=args.top_k,
                         max_tokens=args.max_tokens, seed=args.seed)
     prompts = [tok.apply_chat_template(r.get("messages") or [{"role": "user", "content": r["prompt"]}],
                                        add_generation_prompt=True, tokenize=False,
@@ -128,6 +132,8 @@ def main() -> None:
     p.add_argument("--max-tokens", type=int, default=32768)
     p.add_argument("--max-model-len", type=int, default=32768)
     p.add_argument("--temperature", type=float, default=0.6)
+    p.add_argument("--top-p", type=float, default=1.0, help="1.0 = training-matched default; 0.95 with --top-k 20 = the Qwen thinking preset")
+    p.add_argument("--top-k", type=int, default=-1)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--tp", type=int, default=1)
     p.add_argument("--shard-rank", type=int, default=0)

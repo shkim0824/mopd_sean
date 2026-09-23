@@ -1,0 +1,48 @@
+# PHASE 2 (user 2026-09-15): MOPD 4-domain (PG, 128/upd) from the WEIGHTED merge med 0.4 / law 0.4 / fin 0.1 / if 0.1 of the
+# default teachers (SFT-only law teacher) AND the same 4:4:1:1 ratio inside every batch: 128 prompts = med 51 / law 51 / fin 13 / if 13.
+# Otherwise = 4dom_pg128_merged_w4411_lawsft.yaml (G=1, 200 steps). Teacher replicas are placed with WEIGHTS law=0.4,fin=0.1,if=0.1,med=0.4.
+model:
+  student: models/merged-4teachers-w4411-lawsft
+  dtype: float32
+teachers:
+  endpoints_file: ""                   # written by scripts/opd.sbatch (mopd.distill.placement)
+  top_k: 64
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    law: data/rl_pools/law_rl_v2_train.jsonl
+    fin: data/rl_pools/fin_train.jsonl
+    if: data/rl_pools/if_train.jsonl
+    med: data/rl_pools/med_sftp_train.jsonl
+  max_rows_per_domain: null
+  seed: 42
+  thinking: true
+  per_domain_per_batch: {law: 51, fin: 13, if: 13, med: 51}   # sums to train.batch_size; block order = data.paths order
+distill:
+  mode: pg
+  a_max: 5.0
+  task_reward_coef: 0.0
+  log_task_reward: false
+train:
+  lr: 1.0e-6
+  batch_size: 128
+  num_generations: 1
+  max_completion_length: 16384
+  max_steps: 200
+  per_device_bs: 1
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  save_steps: 25
+  save_total_limit: null
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  vllm_is_mode: token_truncate
+  ddp_timeout: 7200
+  mask_truncated_completions: false
+  output: outputs/opd/mopd-4dom-128-merged-w4411-lawsft-b4411

@@ -1,0 +1,36 @@
+# medical teacher, batch-32 x 16k-packing variant (user 2026-09-20): same data/lr/epochs as the current teacher
+# (configs/sft/distill_med_c6_4ep.yaml) but max_len 16384 instead of 8192 and 4 nodes x pd1 x ga1 = 32 bins per step,
+# so ~207 steps/epoch (~830 total) instead of 842/epoch (3368). Goal: same MedQA with far fewer optimizer steps.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_distill_v3/c6_45opt_k3.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 16384
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_med_c6_b32_16k_4ep
+  epochs: 4.0
+  max_steps: -1
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

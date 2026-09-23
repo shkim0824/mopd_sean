@@ -26,8 +26,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True; export NCCL_SOCKET_IFNA
 export NLTK_DATA='${REPO}/env/nltk_data'; export MOPD_DATA_DIR='${REPO}/data'; export PYTHONPATH='${REPO}'; \
 export DOMAINS_DATA='${REPO}/data/domains'; export DOMAINS_TP='${REPO}/third_party'; \
 export VLLM_LOGGING_LEVEL=WARNING; export MOPD_REPO='${REPO}'; \
+export VLLM_NO_USAGE_STATS=1; export VLLM_DO_NOT_TRACK=1; export VLLM_CONFIG_ROOT='${REPO}/tmp/cache/xdg_config/vllm'; \
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY;"
-PRELUDE="source '${VENV}';"
+# 2026-09-19: the container mounts the node-local home of the SHARED deploy account; keep vLLM's usage-stats/config files out of it
+PRELUDE="source '${VENV}'; export VLLM_NO_USAGE_STATS=1 VLLM_DO_NOT_TRACK=1 VLLM_CONFIG_ROOT='${REPO}/tmp/cache/xdg_config/vllm';"
 
 # run_step <node> <cuda_visible_devices> <logfile> <cmd>   (one --overlap srun step, containerised)
 run_step() {
@@ -57,7 +59,8 @@ wait_http() {
   local start=${SECONDS} t="${WAIT_TIMEOUT:-2400}"
   while true; do
     local ready=0
-    for u in "$@"; do curl -fsS "${u}/v1/models" >/dev/null 2>&1 && ready=$((ready + 1)); done
+    # --noproxy: node-to-node probes must never be routed to the egress proxy, whatever the submitting shell exported
+    for u in "$@"; do curl -fsS --noproxy "*" "${u}/v1/models" >/dev/null 2>&1 && ready=$((ready + 1)); done
     [[ "${ready}" -ge $# ]] && return 0
     (( SECONDS - start >= t )) && { echo "[wait] timeout: ${ready}/$# ready" >&2; return 1; }
     sleep 10
@@ -73,28 +76,32 @@ wait_http() {
 #   placement 4; sbatch ${PLACE_OPT} -J "${JP}-opd-<run>" ...        (do not use $(...): a subshell cannot set JP)
 # place <n_nodes> only prints the option (JP unchanged) for one-liners that set the prefix themselves.
 MINE_RANGE="ib-a100-cluster-a-n[227-236]"; MINE_EXCL="ib-a100-cluster-a-n[001-226,237-258]"
+NEVER_EXCL="ib-a100-cluster-a-n[033-036]"      # user rule 2026-09-15: never submit to n033-036 (every tier, every launcher)
+KILL_ZONE="ib-a100-cluster-a-n[001-040,089-128]"       # operational (2026-09-15): other teams reclaim these nodes by cancelling k- jobs
 RANGE_41_66="ib-a100-cluster-a-n[041-066]"; RANGE_EXCL="ib-a100-cluster-a-n[001-040,067-258]"
 idle_in() { local v; v=$(sinfo -h -n "$1" -t idle -o "%D" 2>/dev/null | head -1); echo "${v:-0}"; }
-pinned_pending() {  # nodes requested by my PENDING jobs that are already pinned to the assigned range
-  local tot=0 j
-  for j in $(squeue -h -t PD -o "%i %j" 2>/dev/null | awk '$2 ~ /^sean-/ {print $1}'); do
-    if scontrol show job "$j" 2>/dev/null | grep -qF "ExcNodeList=${MINE_EXCL}"; then
+pinned_pending() {  # pinned_pending [excl-list]: nodes requested by my PENDING jobs already pinned with that exclusion (default: the assigned range)
+  local want="${1:-${MINE_EXCL}}" tot=0 j
+  for j in $(squeue -h -t PD -o "%i %j" 2>/dev/null | awk '$2 ~ /^(k-)?sean-/ {print $1}'); do
+    if scontrol show job "$j" 2>/dev/null | grep -qF "ExcNodeList=${want}"; then
       tot=$(( tot + $(scontrol show job "$j" | grep -oE "NumNodes=[0-9]+" | head -1 | cut -d= -f2) )); fi
   done; echo "${tot}"
 }
 placement() {
   local n="${1:-1}" mine range
-  mine=$(( $(idle_in "${MINE_RANGE}") - $(pinned_pending) )); range=$(idle_in "${RANGE_41_66}")
+  mine=$(( $(idle_in "${MINE_RANGE}") - $(pinned_pending "${MINE_EXCL}") )); range=$(( $(idle_in "${RANGE_41_66}") - $(pinned_pending "${RANGE_EXCL}") ))
   if [[ "${mine}" -ge "${n}" ]]; then JP="sean"; PLACE_OPT="--exclude=${MINE_EXCL}"; PLACE_TIER="mine(n227-236)"
   elif [[ "${range}" -ge "${n}" ]]; then JP="k-sean"; PLACE_OPT="--exclude=${RANGE_EXCL}"; PLACE_TIER="n041-066"
-  else JP="k-sean"; PLACE_OPT=""; PLACE_TIER="whole-cluster"; fi
+  else JP="k-sean"; PLACE_OPT="--exclude=${NEVER_EXCL}"; PLACE_TIER="whole-cluster"; fi
 }
 place() { placement "$1"; echo "${PLACE_OPT}"; }
+# excl_union <list>...: one Slurm node expression covering all given lists (empty lists ignored)
+excl_union() { local h; h=$(for l in "$@"; do [[ -n "$l" ]] && scontrol show hostnames "$l"; done | sort -u | paste -sd,); [[ -n "$h" ]] && scontrol show hostlist "$h"; }
 
 # prefer <n_nodes>: kept for old call sites = tier 2/3 only (never places on the assigned range)
 prefer() {
-  local idle; idle=$(idle_in "${RANGE_41_66}")
-  if [[ "${idle}" -ge "$1" ]]; then echo "--exclude=${RANGE_EXCL}"; else echo ""; fi
+  local idle; idle=$(( $(idle_in "${RANGE_41_66}") - $(pinned_pending "${RANGE_EXCL}") ))
+  if [[ "${idle}" -ge "$1" ]]; then echo "--exclude=${RANGE_EXCL}"; else echo "--exclude=${NEVER_EXCL}"; fi
 }
 
 # job-name prefix (cluster rule: k-sean-* for jobs that may land outside n041-066)

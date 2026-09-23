@@ -3,6 +3,7 @@
 #   OT3 general SFT (configs/sft/ot3_*.yaml), teacher SFT distillation (configs/sft/distill_*.yaml),
 #   off-policy warm-ups (configs/sft/warmup_*.yaml). Resume: resubmit the same line (train.resume=auto).
 #   cd $REPO && CONFIG=configs/sft/distill_med_c6_4ep.yaml sbatch -N 2 -J k-sean-sft-med-c6 $(prefer 2) scripts/sft.sbatch
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
@@ -15,6 +16,7 @@ cd "${REPO}"; mkdir -p logs
 CONFIG="${CONFIG:?set CONFIG=configs/sft/<x>.yaml}"
 OVERRIDES="${OVERRIDES:-}"
 OUT="${OUT:-$(python3 scripts/cfgval.py "${CONFIG}" train.output)}"
+python3 scripts/rope_guard.py "$(python3 scripts/cfgval.py "${CONFIG}" model.base)" || exit 6   # transformers-5 rope schema guard (2026-09-17)
 for ov in ${OVERRIDES}; do [[ "${ov}" == train.output=* ]] && OUT="${ov#train.output=}"; done
 mkdir -p "${OUT}"
 GA="${GRAD_ACCUM:-$(python3 scripts/cfgval.py "${CONFIG}" train.grad_accum)}"

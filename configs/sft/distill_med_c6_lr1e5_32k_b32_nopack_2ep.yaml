@@ -1,0 +1,42 @@
+# med distill SFT of Qwen3-4B-OT3, same c6 traces (data/sft_distill_v3/c6_45opt_k3.jsonl, 40,853 rows).
+# ARM (2) of the 2026-09-16 batch/packing test: arm (1) with PACKING OFF.
+#   lr 1e-5 -> 5e-7 floor (cosine_with_min_lr, min_lr_rate 0.05), warmup 5%
+#   packing=false -> one EXAMPLE per row (SFTCollator right-pads; pd 1 means no padding at all)
+#   effective batch 32 SEQUENCES/step = 4 nodes x 8 GPU x pd 1 x grad_accum 1
+#   2 epochs -> 40,853 examples / 32 = 1,277 steps/epoch = 2,554 steps, ~83.5k tok/step
+# NOTE: with packing off, "batch 32" is 32 examples (83.5k tok), not 32 bins (1.04M tok) -> the token
+# batch is 12.5x smaller than arm (1) and the step count 12.4x larger. Sigma(lr) = 2,554 x 5.25e-6
+# = 1.34e-2, i.e. 80% of the c6_4ep teacher's 1.68e-2. Slower: one 2.6k-token forward per micro-step.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_distill_v3/c6_45opt_k3.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: false
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_med_c6_lr1e5_32k_b32_nopack_2ep
+  epochs: 2.0
+  lr: 1.0e-5
+  scheduler: cosine_with_min_lr
+  scheduler_kwargs: {min_lr_rate: 0.05}
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 25
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

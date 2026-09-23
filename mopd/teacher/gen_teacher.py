@@ -58,7 +58,10 @@ def main() -> None:
               trust_remote_code=True, enable_prefix_caching=True)
     sp = SamplingParams(n=args.k, temperature=args.temperature, top_p=0.95, top_k=20,
                         max_tokens=args.max_tokens, seed=args.seed + 1000 * rank)
-    prompts = [tok.apply_chat_template([{"role": "user", "content": r["input"]}],
+    # pre-rendered pools (tau2: {prompt_text, ...} with system + history + tools already in the Qwen3 template) are used
+    # verbatim; the MCQ pools ({input}) are rendered as a single user turn as before.
+    prompts = [r["prompt_text"] if r.get("prompt_text") else
+               tok.apply_chat_template([{"role": "user", "content": r["input"]}],
                                        add_generation_prompt=True, tokenize=False,
                                        enable_thinking=True) for r in todo]
     # guard: a prompt longer than the context minus a minimal generation budget would make
@@ -79,7 +82,7 @@ def main() -> None:
         for s in range(0, len(prompts), args.chunk):
             outs = llm.generate(prompts[s:s + args.chunk], sp)
             for r, o in zip(todo[s:s + args.chunk], outs):
-                f.write(json.dumps({"id": r["id"], "gold": r["output"], "meta": r.get("meta"),
+                f.write(json.dumps({"id": r["id"], "gold": r.get("output"), "meta": r.get("meta") or {k: r.get(k) for k in ("sub_domain", "source_dialog_id", "turn_index", "correct", "reward") if k in r},
                                     "samples": [{"text": c.text, "finish": c.finish_reason}
                                                 for c in o.outputs]},
                                    ensure_ascii=False) + "\n")

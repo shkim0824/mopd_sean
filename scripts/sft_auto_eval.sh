@@ -18,7 +18,7 @@ if [[ "$1" == "epochs" ]]; then
   while (( n < NEXP )); do
     for CK in $(ls -d "${D}"/checkpoint-* 2>/dev/null | sort -t- -k2 -n); do
       N=${CK##*-}; [[ -n "${done[$N]:-}" ]] && continue
-      [[ -f "${CK}/config.json" && -f "${CK}/model.safetensors.index.json" ]] || continue
+      [[ -f "${CK}/config.json" && ( -f "${CK}/model.safetensors.index.json" || -f "${CK}/model.safetensors" ) ]] || continue
       sleep 120; submit_ck "${CK}" "${N}"; done[$N]=1; n=$((n+1)); last="${CK}"
     done
     (( n < NEXP )) && sleep 300
@@ -29,7 +29,7 @@ else
   for N in ${STEPS}; do
     CK="${D}/checkpoint-${N}"
     while true; do
-      if [[ -f "${CK}/config.json" && -f "${CK}/model.safetensors.index.json" ]]; then sleep 120; break; fi
+      if [[ -f "${CK}/config.json" && ( -f "${CK}/model.safetensors.index.json" || -f "${CK}/model.safetensors" ) ]]; then sleep 120; break; fi
       if [[ -f "${D}/mopd_sft_done.json" && ! -d "${CK}" ]]; then echo "run finished without checkpoint-${N}; skipping"; continue 2; fi
       sleep 180
     done

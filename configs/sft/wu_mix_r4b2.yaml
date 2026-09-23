@@ -1,0 +1,39 @@
+# warm-up budget search (user 2026-09-19): 3-domain MIXED warm-up r4b2 = law 1.5M + med 40.0M + tau2 97.0M tokens
+# (= 138.5M tokens = 136 steps x 32 packed 32k bins), lr 1e-5 cosine. block-style YAML (cfgval.py is line-based).
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources:
+    math: null
+    code: null
+    if: null
+    mix: data/sft_warmup/wu_mix_r4b2.jsonl
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/wu_mix_r4b2
+  epochs: 100.0
+  max_steps: 136
+  lr: 1.0e-05
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 4
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: steps
+  save_steps: 34
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

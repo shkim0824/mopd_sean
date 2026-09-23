@@ -8,6 +8,7 @@
 #   sbatch -N 4 -J k-sean-opd-<run> --cpus-per-task=32 --mem=600G -t 48:00:00 $(prefer 4) scripts/opd.sbatch
 #   Single domain: STUDENT_NODES=1 TEACHERS="law:models/teacher-law" WEIGHTS="law=1.0" CONFIG=configs/opd/law_pg.yaml sbatch -N 2 ...
 #   Resume: resubmit the same line (train.resume=auto picks the last complete checkpoint).
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
@@ -22,6 +23,7 @@ TEACHERS="${TEACHERS:?set TEACHERS=domain:path[:tp],...}"; WEIGHTS="${WEIGHTS:-}
 TEACHER_MAX_LEN="${TEACHER_MAX_LEN:-32768}"; TEACHER_GPU_UTIL="${TEACHER_GPU_UTIL:-0.55}"; TEACHER_MAX_BATCHED="${TEACHER_MAX_BATCHED:-4096}"; TOPK="${TOPK:-64}"
 STUDENT_NODES="${STUDENT_NODES:-1}"
 read -r OUT BS PD < <(python3 scripts/cfgval.py "${CONFIG}" train.output train.batch_size train.per_device_bs | tr '\n' ' ')
+python3 scripts/rope_guard.py "$(python3 scripts/cfgval.py "${CONFIG}" model.student)" $(echo "${TEACHERS}" | tr "," "\n" | cut -d: -f2 | tr "\n" " ") || exit 6   # transformers-5 rope schema guard (2026-09-17)
 for ov in ${OVERRIDES}; do
   case "${ov}" in train.output=*) OUT="${ov#train.output=}";; train.batch_size=*) BS="${ov#train.batch_size=}";; train.per_device_bs=*) PD="${ov#train.per_device_bs=}";; esac
 done

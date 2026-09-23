@@ -1,5 +1,6 @@
 """Weighted parameter average of HF checkpoints (teacher merge used as an MOPD init).
-Streams tensor by tensor (safetensors), accumulates in fp32, writes bf16 shards with the base model's config/tokenizer.
+Streams tensor by tensor (safetensors), accumulates in fp32 and (default since 2026-09-19) WRITES fp32 shards: a bf16 write erases small-weight
+task vectors (w=0.2: half the energy becomes rounding noise, 77% of weights do not move; tmp/phase3/merge_precision_audit.py). --save-dtype bfloat16 = old behaviour.
 
   python -m mopd.teacher.merge_teachers --out models/merged-4teachers-uniform \
       --teachers law=models/teacher-law,fin=models/teacher-fin,if=models/teacher-if,med=models/teacher-med
@@ -30,13 +31,18 @@ def main(argv=None):
     p.add_argument("--weights", default="", help="name=w,... (default: uniform)")
     p.add_argument("--base", default="models/Qwen3-4B-OT3", help="config/tokenizer source + key list")
     p.add_argument("--out", required=True)
+    p.add_argument("--save-dtype", default="float32", choices=["bfloat16", "float32"],
+                   help="dtype of the written shards (accumulation is always fp32); bf16 rounding can erase small task vectors, see tmp/phase3/merge_precision_audit.py")
+    p.add_argument("--mode", default="average", choices=["average", "task_arithmetic"],
+                   help="average: sum_i w_i theta_i (weights must sum to 1); task_arithmetic: theta_base + sum_i w_i (theta_i - theta_base) (any weights, e.g. non-simplex)")
     a = p.parse_args(argv)
     teachers = dict(kv.split("=", 1) for kv in a.teachers.split(","))
     weights = {n: 1.0 / len(teachers) for n in teachers}
     if a.weights:
         weights = {k: float(v) for k, v in (kv.split("=", 1) for kv in a.weights.split(","))}
     assert set(weights) == set(teachers), (weights, teachers)
-    assert abs(sum(weights.values()) - 1.0) < 1e-6, weights
+    if a.mode == "average":
+        assert abs(sum(weights.values()) - 1.0) < 1e-6, weights
     os.makedirs(a.out, exist_ok=True)
     maps = {n: _wmap(d) for n, d in teachers.items()}
     base_map = _wmap(a.base)
@@ -66,13 +72,15 @@ def main(argv=None):
 
     for i, k in enumerate(keys):
         acc = None
+        if a.mode == "task_arithmetic":
+            acc = get(base_map[k], k).to(torch.float32) * (1.0 - sum(weights.values()))   # base + sum w_i (t_i - base)
         for n in teachers:
             t = get(maps[n][k], k).to(torch.float32) * weights[n]
             acc = t if acc is None else acc + t
-        avg = acc.to(torch.bfloat16).contiguous()
+        avg = acc.to(getattr(torch, a.save_dtype)).contiguous()
         shard[k] = avg
-        shard_bytes += avg.numel() * 2
-        total += avg.numel() * 2
+        shard_bytes += avg.numel() * avg.element_size()
+        total += avg.numel() * avg.element_size()
         if shard_bytes >= SHARD_LIMIT:
             flush()
         if i % 50 == 0:
@@ -91,12 +99,13 @@ def main(argv=None):
     for f in os.listdir(a.base):
         if f.endswith((".json", ".jinja", ".txt")) and f != "model.safetensors.index.json":
             shutil.copy(os.path.join(a.base, f), os.path.join(a.out, f))
-    cfg = json.load(open(os.path.join(a.out, "config.json"))); cfg["torch_dtype"] = "bfloat16"
+    cfg = json.load(open(os.path.join(a.out, "config.json"))); cfg["torch_dtype"] = a.save_dtype; cfg.update({"dtype": a.save_dtype} if "dtype" in cfg else {})
     json.dump(cfg, open(os.path.join(a.out, "config.json"), "w"), indent=2)
-    json.dump({"teachers": teachers, "weights": weights, "dtype": "bfloat16", "base_config_from": a.base},
+    json.dump({"teachers": teachers, "weights": weights, "mode": a.mode, "dtype": a.save_dtype, "base_config_from": a.base},
               open(os.path.join(a.out, "merge_info.json"), "w"), indent=2)
     k = "model.layers.0.self_attn.q_proj.weight"
     ref = sum(get(maps[n][k], k).to(torch.float32) * weights[n] for n in teachers)
+    if a.mode == "task_arithmetic": ref = ref + get(base_map[k], k).to(torch.float32) * (1.0 - sum(weights.values()))
     got = safe_open(os.path.join(a.out, weight_map[k]), "pt").get_tensor(k).to(torch.float32)
     print("sanity max|diff|:", (ref - got).abs().max().item(), "tensors:", len(weight_map), "total bytes:", total)
 

@@ -1,0 +1,42 @@
+# med distill SFT of Qwen3-4B-OT3 on the SAME teacher traces as sft_distill_med_c6_4ep
+# (data/sft_distill_v3/c6_45opt_k3.jsonl, 40,853 rows).  Same large-batch recipe as
+# distill_med_c6_lr5e6_32k_2ep but with a HIGHER peak lr: the 5e-6 arm plateaued at MedQA 65.8
+# (base OT3 = 69.8) because 104 steps x mean lr 2.75e-6 is 1/59 of the c6_4ep run's optimisation
+# budget (3,368 steps x 5e-6).  Adam's step length is set by lr, not by batch size, so the 16x
+# larger batch does not compensate; this arm raises lr instead (2026-09-16).
+#   lr 2.0e-5 -> 5e-7 floor (cosine_with_min_lr, min_lr_rate 0.025), warmup 5%
+#   packing=flatten with 32k bins; effective batch 64 bins/step = 4 nodes x 8 GPU x pd 1 x grad_accum 2
+#   2 epochs (52 steps/epoch, 104 total), save each epoch.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {med: data/sft_distill_v3/c6_45opt_k3.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_med_c6_lr2e5_32k_2ep
+  epochs: 2.0
+  lr: 2.0e-5
+  scheduler: cosine_with_min_lr
+  scheduler_kwargs: {min_lr_rate: 0.025}
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 2
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

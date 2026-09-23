@@ -20,9 +20,17 @@ import time
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
 
+# 2026-09-19: import liger BEFORE the process group exists. HF Trainer imports liger_kernel lazily inside Trainer.__init__,
+# i.e. after NCCL/IB threads are running; a rank then deadlocked in glibc malloc while unmarshalling liger's .pyc
+# (py-spy --native on jobs 579140/579141, and the same symptom on 579023), hanging every other rank in NCCL.
+try:
+    import liger_kernel.transformers  # noqa: F401
+except Exception:  # liger is optional (train.liger=false)
+    pass
+
 from mopd.common import chat
 from mopd.common.config import add_config_args, dump, load_config
-from mopd.common.resume import find_resume_checkpoint
+from mopd.common.resume import find_resume_checkpoint, list_checkpoints
 from mopd.sft.dataset import SFTCollator, SFTDataset, build_mixture
 
 DEFAULTS = {
@@ -30,7 +38,9 @@ DEFAULTS = {
     "data": {"sources": {"math": "data/train/sft_math.jsonl", "code": "data/train/sft_code.jsonl", "if": "data/train/sft_if.jsonl"},
              "cache_dir": None,  # pre-built memmap cache (mopd.data.prep_openthoughts3) -> sources ignored
              "weights": None, "max_rows": None, "max_len": 32768, "thinking": True, "packing": "flatten", "seed": 42},
-    "train": {"output": "outputs/sft/qwen3-4b", "epochs": 1.0, "lr": 2e-5, "scheduler": "cosine", "warmup_ratio": 0.03,
+    "train": {"output": "outputs/sft/qwen3-4b", "epochs": 1.0, "lr": 2e-5, "scheduler": "cosine",
+              # scheduler_kwargs: extra args for the lr schedule, e.g. cosine_with_min_lr + {min_lr_rate: 0.1}
+              "scheduler_kwargs": None, "warmup_ratio": 0.03,
               "weight_decay": 0.0, "max_grad_norm": 1.0, "per_device_bs": 2, "grad_accum": 1, "logging_steps": 5,
               "save_strategy": "steps", "save_steps": 100, "save_total_limit": None, "save_only_model": False,
               "max_steps": -1, "resume": "auto", "seed": 42, "dataloader_workers": 2, "liger": True, "grad_ckpt": True},
@@ -103,7 +113,9 @@ def main(argv=None):
         num_train_epochs=cfg.train.epochs,
         per_device_train_batch_size=cfg.train.per_device_bs,
         gradient_accumulation_steps=cfg.train.grad_accum,
-        learning_rate=cfg.train.lr, lr_scheduler_type=cfg.train.scheduler, warmup_ratio=cfg.train.warmup_ratio,
+        learning_rate=cfg.train.lr, lr_scheduler_type=cfg.train.scheduler,
+        lr_scheduler_kwargs=dict(cfg.train.get("scheduler_kwargs") or {}),
+        warmup_ratio=cfg.train.warmup_ratio,
         weight_decay=cfg.train.weight_decay, max_grad_norm=cfg.train.max_grad_norm,
         seed=cfg.train.seed, bf16=True, tf32=True,
         gradient_checkpointing=bool(cfg.train.grad_ckpt), gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -122,7 +134,27 @@ def main(argv=None):
     )
     trainer = Trainer(model=model, args=targs, train_dataset=ds, data_collator=SFTCollator(tok.pad_token_id), processing_class=tok)
     t0 = time.time()
-    resume = find_resume_checkpoint(cfg.train.output, cfg.train.resume)
+    # model-only checkpoints (save_only_model) carry weights + global_step but no optimizer state. HF can resume from
+    # those only WITHOUT DeepSpeed; under DeepSpeed, deepspeed_load_checkpoint() demands a global_step*/ dir and raises
+    # "Can't find a valid checkpoint at ..." -- job 580089 (2026-09-20) died that way 1m28s after a guard re-pin cancelled
+    # the healthy run 580047 at step 101/392. Under DeepSpeed we restart from step 0 instead of crashing; the model-only
+    # checkpoints stay on disk (resume.py keeps them), they are just not resume points.
+    allow_model_only = bool(cfg.train.save_only_model) and not trainer.is_deepspeed_enabled
+    resume = find_resume_checkpoint(cfg.train.output, cfg.train.resume, allow_model_only=allow_model_only)
+    if resume is None and not allow_model_only and list_checkpoints(cfg.train.output) and is_main():
+        print("[sft] NOTE: model-only checkpoints exist but DeepSpeed cannot resume from them -> fresh run from step 0", flush=True)
+    if resume and not os.path.isfile(os.path.join(resume, "scheduler.pt")):
+        from transformers import TrainerCallback
+
+        class _SchedulerFastForward(TrainerCallback):
+            def on_train_begin(self, args, state, control, **kw):
+                sch = kw.get("lr_scheduler")
+                if sch is not None and state.global_step > 0:
+                    for _ in range(state.global_step):
+                        sch.step()
+                    if is_main():
+                        print(f"[sft] model-only resume: LR schedule fast-forwarded to step {state.global_step} (lr={sch.get_last_lr()[0]:.3e})", flush=True)
+        trainer.add_callback(_SchedulerFastForward())
     if is_main():
         print(f"[sft] resume_from_checkpoint = {resume}", flush=True)
     trainer.train(resume_from_checkpoint=resume)

@@ -74,7 +74,7 @@ def _encode_chunk(rows):
     ds.stats = {"dropped_long_completion": 0, "prompt_truncated": 0, "tokens": 0}  # fresh per chunk
     out = []
     for r in rows:
-        ex = ds._encode(r["messages"])
+        ex = ds.encode_row(r)
         if ex is not None:
             out.append(ex)
             ds.stats["tokens"] += len(ex["input_ids"])
@@ -127,7 +127,7 @@ class SFTDataset(Dataset):
                     self.stats[k] += st[k]
         else:
             for r in rows:
-                ex = self._encode(r["messages"])
+                ex = self.encode_row(r)
                 if ex is not None:
                     self.examples.append(ex)
                     self.stats["tokens"] += len(ex["input_ids"])
@@ -141,6 +141,18 @@ class SFTDataset(Dataset):
             torch.save({"examples": self.examples, "stats": self.stats}, tmp)
             os.replace(tmp, cache_path)
 
+    def encode_row(self, r: Dict[str, Any]):
+        """Dispatch on the row format: pre-rendered {prompt_text, completion} or legacy {messages}."""
+        if "prompt_text" in r:
+            return self._encode_text(r["prompt_text"], r["completion"])
+        return self._encode(r["messages"])
+
+    def _encode_text(self, prompt_text: str, completion: str):
+        """Pre-rendered prompt (already carries the chat template, tools and the generation prompt)."""
+        prompt_ids = self.tok(prompt_text, add_special_tokens=False)["input_ids"]
+        comp_ids = self.tok(completion, add_special_tokens=False)["input_ids"] + [self.eos]
+        return self._finish(prompt_ids, comp_ids)
+
     def _encode(self, messages: List[Dict[str, str]]):
         assert messages[-1]["role"] == "assistant"
         prompt_ids = chat.render_prompt_ids(self.tok, messages[:-1], thinking=self.thinking)
@@ -148,6 +160,9 @@ class SFTDataset(Dataset):
         if not self.thinking:
             comp = chat.split_thinking(comp)["answer"]
         comp_ids = self.tok(comp, add_special_tokens=False)["input_ids"] + [self.eos]
+        return self._finish(prompt_ids, comp_ids)
+
+    def _finish(self, prompt_ids, comp_ids):
         if len(comp_ids) >= self.max_len:
             self.stats["dropped_long_completion"] += 1
             return None

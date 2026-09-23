@@ -1,0 +1,44 @@
+# phase 3-3 ablation: med+IF 2-domain MOPD from the merge med 0.6 / if 0.4, 64 prompts/update (32+32), 2 nodes, pg, mask on.
+model:
+  student: models/merged-medif-r60
+  dtype: float32
+teachers:
+  endpoints_file: ''
+  top_k: 64
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    med: data/rl_pools/med_sftp_train.jsonl
+    if: data/rl_pools/if_train.jsonl
+  max_rows_per_domain: null
+  seed: 42
+  thinking: true
+  per_domain_per_batch: equal
+distill:
+  mode: pg
+  a_max: 5.0
+  task_reward_coef: 0.0
+  log_task_reward: false
+train:
+  lr: 1.0e-06
+  batch_size: 64
+  num_generations: 1
+  max_completion_length: 16384
+  max_steps: 200
+  per_device_bs: 1
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  save_steps: 25
+  save_total_limit: null
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  vllm_is_mode: token_truncate
+  ddp_timeout: 7200
+  mask_truncated_completions: true
+  output: outputs/opd/mopd-2dom-medif-64-r60

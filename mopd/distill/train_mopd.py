@@ -45,7 +45,7 @@ DEFAULTS = {
               "per_device_bs": 2, "temperature": 1.0, "top_p": 1.0, "beta": 0.0, "scheduler": "constant",
               "warmup_ratio": 0.0, "max_grad_norm": 1.0, "save_steps": 5, "save_total_limit": 2, "save_only_model": False,
               "resume": "auto", "logging_steps": 1,
-              "vllm_gpu_memory_utilization": 0.3, "vllm_tp": 1, "ddp_timeout": 7200, "mask_truncated_completions": False,
+              "vllm_gpu_memory_utilization": 0.3, "vllm_tp": 1, "ddp_timeout": 7200, "mask_truncated_completions": True,   # user order 2026-09-17: on for every run from now on
               "output": "outputs/mopd/qwen3-8b"},
 }
 

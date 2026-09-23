@@ -1,0 +1,39 @@
+# warm-up budget search, round 1 (user 2026-09-19): single-domain SFT (tau), 200 steps x 32 packed 32k bins (1 node: 8 GPU x grad_accum 4 = 1.05M tokens/step), lr 1e-5 cosine,
+# save every 25 steps (weights only) -> domain eval per checkpoint. block-style YAML (cfgval.py is line-based).
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources:
+    math: null
+    code: null
+    if: null
+    tau: data/sft_warmup/tau2_teacher_k4_keep3.jsonl
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/wu_r1_tau_b32_s200
+  epochs: 100.0
+  max_steps: 200
+  lr: 1.0e-05
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 4
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: steps
+  save_steps: 25
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

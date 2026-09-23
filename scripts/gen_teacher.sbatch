@@ -4,6 +4,7 @@
 # Node p owns global shards [p*NSH_NODE, (p+1)*NSH_NODE). Resume-safe: resubmit with the same TAG.
 #   MODEL=models/teacher-med POOL=data/rl_pools/med_sftp_train.jsonl TAG=gen-med-teacher-k4 K=4 TP=1 TEMP=1.0 \
 #     sbatch -N 2 -J k-sean-gen-<tag> $(prefer 2) scripts/gen_teacher.sbatch      -> outputs/teacher_gen/<TAG>
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8

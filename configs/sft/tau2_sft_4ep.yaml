@@ -1,0 +1,45 @@
+# ARCHIVED 2026-09-17: run moved to past/sft_tau2/ (symlink left at outputs/sft/). Final tau2 teacher = models/teacher-tau (noah packed32).
+# tau2 teacher SFT (phase 3-2, user 2026-09-17): Qwen3-4B-OT3 <- inclusionAI/AReaL-tau2-data, our own teacher
+# replacing MMOPD/Qwen3-4B-OT3-tau (which collapses on system prompts > ~6k chars and runs away 30% of turns at T=1.0).
+# Recipe follows the AReaL paper (arXiv 2601.22607: SFT lr 5e-6, batch 128, 32k context, thinking in targets) and
+# this repo's distill_law_lr5e6_32k_2ep optimiser (cosine to a 10% floor, 5% warmup, packing=flatten 32k bins);
+# 4-epoch variant (user, 2026-09-17 17:00) of tau2_sft_3ep: identical recipe/data, only epochs 3 -> 4 (cosine stretched over 520 steps),
+# separate output dir so the 3-epoch checkpoints stay untouched; a checkpoint per epoch (130/260/390/520).
+# Rows are pre-rendered by mopd/data/prep_tau2_sft.py: exact native-template prompt WITH the official tau2 tool
+# schemas, target = the final assistant turn only (<think> + text / tool calls); context thinking is dropped as at
+# inference; rows over 32k tokens dropped (no system-prompt truncation); 251 telecom rows on tau2 base/test tasks
+# excluded so the teacher's telecom evaluation stays clean.
+#   effective batch = 8 nodes x 8 GPU x per_device_bs 1 x grad_accum 1 = 64 bins/step (~300 rows/step)
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {tau: data/sft_distill/tau2_sft.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_tau2_4ep
+  epochs: 4.0
+  lr: 5.0e-6
+  scheduler: cosine_with_min_lr
+  scheduler_kwargs: {min_lr_rate: 0.1}
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

@@ -4,6 +4,7 @@ Prompts are passed as TOKEN IDS produced by the same ``render_prompt_ids`` used
 for SFT targets / RL rollouts, so eval is byte-identical to training.
 """
 from __future__ import annotations
+import os
 
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -13,7 +14,7 @@ from mopd.common import chat
 class VllmGenerator:
     def __init__(self, model_path: str, tokenizer_path: Optional[str] = None, tp: int = 1,
                  max_model_len: int = 40960, gpu_mem_util: float = 0.90, seed: int = 0,
-                 enforce_eager: bool = False):
+                 enforce_eager: bool = False, enable_prefix_caching: Optional[bool] = None):
         from transformers import AutoTokenizer
         from vllm import LLM
 
@@ -28,10 +29,12 @@ class VllmGenerator:
                 max_model_len = mpe
         except Exception:
             pass
+        extra = {} if enable_prefix_caching is None else {"enable_prefix_caching": enable_prefix_caching}
         self.llm = LLM(model=model_path, tokenizer=tokenizer_path or model_path, tensor_parallel_size=tp,
                        disable_custom_all_reduce=(tp > 1),  # custom_all_reduce 'invalid argument' at tp>1 on this box
-                       dtype="bfloat16", max_model_len=max_model_len, gpu_memory_utilization=gpu_mem_util,
-                       trust_remote_code=True, seed=seed, enforce_eager=(enforce_eager or tp > 2))
+                       dtype=os.environ.get("EVAL_DTYPE", "bfloat16"),   # EVAL_DTYPE=float32: serve an fp32-saved merge without the bf16 rounding (2026-09-19)
+                       max_model_len=max_model_len, gpu_memory_utilization=gpu_mem_util,
+                       trust_remote_code=True, seed=seed, enforce_eager=(enforce_eager or tp > 2), **extra)
         self.stop_ids = chat.eos_token_ids(self.tok)
         self.max_model_len = max_model_len
 
@@ -64,3 +67,96 @@ class VllmGenerator:
         for r in results:
             outs.append([{"text": c.text, "n_tokens": len(c.token_ids), "finish_reason": c.finish_reason} for c in r.outputs])
         return outs
+
+    # ------------------------------------------------------------------ continuation scoring
+    @staticmethod
+    def encode_pair(tok, context: str, continuation: str):
+        """lm-evaluation-harness ``TemplateLM._encode_pair``: a trailing space on the
+        context moves to the continuation before tokenising, so the boundary token is the
+        one the harness scores."""
+        n_spaces = len(context) - len(context.rstrip())
+        if n_spaces > 0:
+            continuation = context[-n_spaces:] + continuation
+            context = context[:-n_spaces]
+        whole = tok(context + continuation, add_special_tokens=False)["input_ids"]
+        ctx = tok(context, add_special_tokens=False)["input_ids"]
+        return ctx, whole[len(ctx):]
+
+    def lp_context(self, spec: Dict[str, Any]) -> str:
+        """Context text of one log-prob request. ``chat`` renders the Qwen3 template (the
+        assistant prefix, e.g. "I believe the best answer is", is appended to the rendered
+        prompt); ``raw`` uses the text as-is (the official TruthfulQA QA_PRIMER prompt)."""
+        if spec.get("mode", "chat") == "chat":
+            ctx = chat.render_prompt(self.tok, spec["messages"], thinking=spec.get("thinking", False))
+        else:
+            ctx = spec["text"]
+        return ctx + (spec.get("assistant_prefix") or "")
+
+    def score_continuations(self, specs: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """-> per spec {logprob (SUM over the continuation's tokens), n_tokens}.
+
+        One prefill per (context, continuation) pair, ``prompt_logprobs=1`` and
+        ``max_tokens=1`` — the same request shape lm-eval's vLLM backend uses for
+        loglikelihood tasks. No text is generated."""
+        from vllm import SamplingParams
+        from vllm.inputs import TokensPrompt
+
+        prompts, spans, all_ids = [], [], []
+        for s in specs:
+            ctx, cont = self.encode_pair(self.tok, self.lp_context(s), s["cont"])
+            if not cont:
+                prompts.append(TokensPrompt(prompt_token_ids=ctx or [self.tok.eos_token_id]))
+                spans.append(None)
+                all_ids.append(ctx)
+                continue
+            ids = list(ctx) + list(cont)
+            if len(ids) > self.max_model_len - 1:          # left-truncate the context
+                keep = self.max_model_len - 1 - len(cont)
+                ids = list(ctx)[-max(keep, 1):] + list(cont)
+            a = len(ids) - len(cont)
+            prompts.append(TokensPrompt(prompt_token_ids=ids))
+            spans.append((a, len(ids)))
+            all_ids.append(ids)
+        params = SamplingParams(temperature=0.0, max_tokens=1, prompt_logprobs=1)
+        outs = self.llm.generate(prompts, params, use_tqdm=False)
+        res: List[Dict[str, Any]] = []
+        for o, span, ids in zip(outs, spans, all_ids):
+            if span is None:
+                res.append({"logprob": 0.0, "n_tokens": 0})
+                continue
+            a, b = span
+            pl = o.prompt_logprobs
+            tot = 0.0
+            for pos in range(a, b):
+                d = pl[pos]
+                tot += float(d[ids[pos]].logprob)
+            res.append({"logprob": tot, "n_tokens": b - a})
+        return res
+
+    # ------------------------------------------------------------------ heterogeneous batch
+    def generate_mixed(self, items: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """One engine call for prompts with DIFFERENT sampling params.
+
+        items: {messages, n, max_tokens, sampling{temperature,top_p,top_k,presence_penalty},
+                mode, thinking}  ->  per item, a list of n dicts {text, n_tokens, finish_reason}
+
+        Same per-prompt budget rule as ``generate`` (never ask for more than the context
+        allows) and the same seed convention (a seed only when sampling is stochastic)."""
+        from vllm import SamplingParams
+        from vllm.inputs import TokensPrompt
+
+        prompts, sps = [], []
+        for it in items:
+            ids = self.prompt_ids(it["messages"], it.get("mode", "chat"), it.get("thinking", True))
+            s = dict(it.get("sampling") or {})
+            budget = max(16, min(int(it.get("max_tokens", 32768)), self.max_model_len - len(ids)))
+            prompts.append(TokensPrompt(prompt_token_ids=ids))
+            sps.append(SamplingParams(n=int(it.get("n", 1)), max_tokens=budget,
+                                      temperature=s.get("temperature", 1.0),
+                                      top_p=s.get("top_p", 1.0), top_k=s.get("top_k", -1),
+                                      presence_penalty=s.get("presence_penalty", 0.0),
+                                      seed=(it.get("seed", 0) if s.get("temperature", 1.0) > 0 else None),
+                                      stop_token_ids=self.stop_ids, skip_special_tokens=True))
+        outs = self.llm.generate(prompts, sps, use_tqdm=True)
+        return [[{"text": c.text, "n_tokens": len(c.token_ids), "finish_reason": c.finish_reason}
+                 for c in r.outputs] for r in outs]

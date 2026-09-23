@@ -55,6 +55,12 @@ checkpoint, pool and result of the study lives here; the three original reposito
 Runtime: the team training container + `$S/.venv/mopd` (trl 0.29, vLLM, transformers 4.57) for SFT / OPD / eval, and the
 NeMo-RL 0.7 container for RL teachers. Node placement (`placement N` in `scripts/_common.sh`, three tiers): the assigned
 nodes n227-236 (job prefix `sean-`), else n041-066 when it has room (`k-sean-`), else the whole cluster (`k-sean-`).
+Nodes n033-034 are never used (rule 2026-09-15: `NEVER_EXCL` in `scripts/_common.sh`, unioned into every launcher's exclusion).
+`scripts/guard_jobs.sh` is the node manager (login-node loop, 60 s): every cycle it re-places my pending jobs by the same
+priorities — pulls them into n227-236 whenever nodes there are idle or held by foreign jobs (and cancels those foreign jobs
+while a pinned job of mine is pending), pins them to n041-066 when it has idle room (never cancelling anything there) and
+releases a job still waiting there after 5 min to the rest of the cluster, keeps n033-034 excluded everywhere, logs every
+start, and resubmits killed training runs from their latest checkpoint (`tmp/guard_registry.tsv`).
 Every run keeps every checkpoint and reports performance at temperature 1.0 (domain benchmarks) or the Qwen3 thinking
 preset (general benchmarks).
 
@@ -127,6 +133,19 @@ teachers (vLLM prefill, placed by `mopd.distill.placement`). Start from another 
 <details>
 <summary><b>④ Evaluation</b></summary>
 
+ONE job, one vLLM start-up per GPU, every benchmark — in-domain + IF + OOD (math, code, safety, GPQA).
+Each benchmark keeps its own sampling protocol (`mopd/eval/registry.py`); see `docs/EVAL_ALL.md`.
+
+```bash
+MODEL=outputs/opd/<run>/checkpoint-200 TAG=all-opd-<run>-ck200 \
+  sbatch -N 2 -J k-sean-evalall-<tag> $(prefer 2) scripts/eval_all.sbatch          # -> outputs/eval_all/<TAG>
+BENCHMARKS=gpqa,harmbench,sycophancy,truthfulqa_mc MODEL=... TAG=ood-... \
+  sbatch -N 2 -J k-sean-evalall-<tag> $(prefer 2) scripts/eval_all.sbatch          # safety + GPQA only
+setsid nohup bash scripts/auto_eval_all.sh <run> full 25 50 75 100 125 150 175 200 > logs/ae_<run>.log 2>&1 &
+```
+
+Legacy pair (still used by the chains started before 2026-09-16; same numbers, two jobs):
+
 ```bash
 MODEL=outputs/opd/<run>/checkpoint-200 TAG=opd-<run>-ck200-dom3-T1 BENCHMARKS=medqa,casehold,finqa \
   sbatch -N 2 -J k-sean-domeval-<tag> $(prefer 2) scripts/eval_domain.sbatch      # T=1.0 -> outputs/eval_domain/<TAG>
@@ -134,6 +153,8 @@ MODEL=outputs/opd/<run>/final TAG=full-opd-<run>-final-32k \
   sbatch -N 2 -J k-sean-eval6-<tag> $(prefer 2) scripts/eval_6bench.sbatch        # AIME24-26, LCB v6, IFEval, IFBench
 ```
 Report convention: one model per row, base and teacher rows included, s̃ = mean over domains of (s_d − base) / (teacher − base).
+Safety is an OOD track from phase 3 on (no safety training): HarmBench ASR and the sycophancy rate are
+LOWER-is-better, TruthfulQA MC2 and GPQA higher-is-better, so they never enter a group average together.
 </details>
 
 <details>
@@ -142,7 +163,7 @@ Report convention: one model per row, base and teacher rows included, s̃ = mean
 | variation | knob |
 |---|---|
 | PG vs top-k distillation | `distill.mode: pg` / `topk` + `TOPK=64` or `16` (`configs/opd/*_top64.yaml`, `*_top16.yaml`) |
-| prompts per update, per-domain balance | `train.batch_size`, `data.per_domain_per_batch` |
+| prompts per update, per-domain balance | `train.batch_size`, `data.per_domain_per_batch` (int = same count for every domain; dict `{law: 51, fin: 13, if: 13, med: 51}` = ratio batches, sum = batch_size; `configs/mopd/4dom_pg128_merged_w4411_lawsft_b4411.yaml`) |
 | truncation masking (loop recovery) | `train.mask_truncated_completions: true` |
 | student init: SFT warm-up / merged teachers / another run | `scripts/opd_from_ckpt.sh` |
 | merged-teacher init | `python -m mopd.teacher.merge_teachers --teachers law=models/teacher-law,... --weights law=0.4,... --base models/Qwen3-4B-OT3 --out models/merged-...` |

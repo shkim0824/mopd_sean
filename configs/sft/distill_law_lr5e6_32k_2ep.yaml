@@ -1,0 +1,39 @@
+# law distill SFT of Qwen3-4B-OT3 on the SAME teacher traces as sft_distill_law_2ep
+# (data/sft_distill/law_sft.jsonl, 56,123 rows) with the 2026-09-16 optimiser config:
+#   lr 5e-6 -> 5e-7 floor (cosine_with_min_lr, min_lr_rate = 5e-7/5e-6 = 0.1), warmup 5%
+#   packing=flatten with 32k bins (max_len 32768; was 20480)
+#   effective batch 64 bins/step = 4 nodes x 8 GPU x per_device_bs 1 x grad_accum 2
+#   2 epochs, save each epoch.  ~134.6M train tokens -> ~4.2k bins -> ~65 steps/epoch.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {law: data/sft_distill/law_sft.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_distill_law_lr5e6_32k_2ep
+  epochs: 2.0
+  lr: 5.0e-6
+  scheduler: cosine_with_min_lr
+  scheduler_kwargs: {min_lr_rate: 0.1}
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 2
+  liger: true
+  grad_ckpt: true
+  logging_steps: 5
+  save_strategy: epoch
+  save_steps: 0
+  save_total_limit: null
+  save_only_model: false
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

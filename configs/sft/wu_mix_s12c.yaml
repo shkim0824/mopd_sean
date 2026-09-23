@@ -1,0 +1,40 @@
+# warm-up mix s12c (user 2026-09-21): law 26.9M + med 42.6M + tau2 79.6M tokens
+# = 149.2M tokens = 148 steps x 32 packed 32k bins. MOPD validation rows excluded.
+# block-style YAML (cfgval.py is line-based).
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources:
+    math: null
+    code: null
+    if: null
+    mix: data/sft_warmup/wu_mix_s12c.jsonl
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/wu_mix_s12c
+  epochs: 100.0
+  max_steps: 148
+  lr: 1.0e-05
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 4
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: steps
+  save_steps: 37
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

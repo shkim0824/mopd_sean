@@ -3,12 +3,13 @@
 # x 8 DP vLLM workers; node p runs global shards p*8..p*8+7, then one aggregate step scores the shards. T=1.0 default.
 #   MODEL=outputs/opd/<run>/checkpoint-200 TAG=opd-<run>-ck200-dom3-T1 BENCHMARKS=medqa,casehold,finqa \
 #     sbatch -N 2 -J k-sean-domeval-<tag> $(prefer 2) scripts/eval_domain.sbatch          (LIMIT=48 for a smoke)
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=600G
-#SBATCH -t 8:00:00
+#SBATCH -t 4:00:00
 #SBATCH --output=logs/domeval-%j.log
 MOPD_REPO="${MOPD_REPO:-${SLURM_SUBMIT_DIR:-$(pwd)}}"; source "${MOPD_REPO}/scripts/_common.sh"
 cd "${REPO}"; mkdir -p logs tmp/cache
@@ -16,6 +17,8 @@ MODEL="$(realpath "${MODEL:?set MODEL}")"; TAG="${TAG:?set TAG}"; BENCHMARKS="${
 OUT="${OUT:-${REPO}/outputs/eval_domain/${TAG}}"; mkdir -p "${OUT}"
 LIMIT_ARG=""; [[ -n "${LIMIT:-}" ]] && LIMIT_ARG="--limit ${LIMIT}"
 NODES=${SLURM_JOB_NUM_NODES}; TOTAL=$((NODES * 8)); MAXTOK="${MAX_TOKENS:-26624}"; TEMP="${TEMP:-1.0}"
+TOP_P="${TOP_P:-1.0}"; TOP_K="${TOP_K:--1}"   # Qwen thinking preset = TEMP=0.6 TOP_P=0.95 TOP_K=20
+printf '{"sampling": {"temperature": %s, "top_p": %s, "top_k": %s}, "max_tokens": %s, "benchmarks": "%s", "model": "%s", "runner": "eval_domain.sbatch"}\n' "${TEMP}" "${TOP_P}" "${TOP_K}" "${MAXTOK}" "${BENCHMARKS}" "${MODEL}" > "${OUT}/protocol.json"
 echo "[domeval] nodes=${NODES} shards=${TOTAL} model=${MODEL} benchmarks=${BENCHMARKS} T=${TEMP} start=$(date +%s)"
 srun --kill-on-bad-exit=0 --ntasks=${NODES} --ntasks-per-node=1 --export=ALL --container-image="${IMG}" --container-mounts="${MOUNT}" \
   --container-workdir="${REPO}" bash -lc "
@@ -30,7 +33,7 @@ for g in 0 1 2 3 4 5 6 7; do
   export VLLM_PORT=\$((41000 + g*1000))
   CUDA_VISIBLE_DEVICES=\$g python -m mopd.eval.domains.run_domain_eval \
     --model '${MODEL}' --benchmarks '${BENCHMARKS}' --out '${OUT}' ${LIMIT_ARG} \
-    --max-tokens ${MAXTOK} --temperature ${TEMP} \
+    --max-tokens ${MAXTOK} --temperature ${TEMP} --top-p ${TOP_P} --top-k ${TOP_K} \
     --shard-rank \$rank --num-shards ${TOTAL} > '${OUT}'/worker_\$rank.log 2>&1 &
   pids+=(\$!)
 done

@@ -4,6 +4,7 @@
 # TP=8 -> one worker), then one aggregate step. Used to pick / validate a trace teacher before scripts/gen_teacher.sbatch.
 #   MODEL=$S/past/models/Qwen3.6-35B-A3B TAG=big-35b-dom3-T1 BENCHMARKS=medqa,casehold,finqa TP=2 \
 #     sbatch -J k-sean-evalbig-<tag> $(prefer 1) scripts/eval_big.sbatch            (LIMIT=48 for a smoke; T=1.0 default)
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8

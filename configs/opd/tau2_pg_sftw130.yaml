@@ -1,0 +1,43 @@
+# phase 3-3: tau2 OPD from the tau2 SFT warm-up (our sft_tau2_3ep epoch-1 checkpoint-130, tau2 telecom 43.9), same recipe as tau2_pg.yaml.
+model:
+  student: outputs/sft/sft_tau2_3ep/checkpoint-130
+  dtype: float32
+teachers:
+  endpoints_file: ''
+  top_k: 0
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    tau: data/rl_pools/tau_opd_train.jsonl
+  max_rows_per_domain: null
+  seed: 42
+  thinking: true
+  max_prompt_tokens: 15872
+distill:
+  mode: pg
+  a_max: 5.0
+  task_reward_coef: 0.0
+  log_task_reward: false
+train:
+  lr: 1.0e-06
+  batch_size: 32
+  num_generations: 1
+  max_completion_length: 16384
+  max_steps: 200
+  per_device_bs: 1
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  save_steps: 25
+  save_total_limit: null
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  vllm_is_mode: token_truncate
+  ddp_timeout: 7200
+  mask_truncated_completions: true
+  output: outputs/opd/opd-tau2-pg-sftw130

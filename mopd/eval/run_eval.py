@@ -4,10 +4,11 @@ Data-parallel: the parent shards (benchmark, row) pairs round-robin over --gpus,
 spawns one worker process per GPU (each an offline vLLM engine, tp=1), waits,
 merges the shards, grades, writes <out>/metrics.json + <out>/<bench>.gen.jsonl.
 
-DEFAULT SAMPLING (user decision 2026-08-30, DEVIATES from the MOPD paper): ``--preset qwen-thinking``
-= temperature 0.6, top_p 0.95, top_k 20 (Qwen3 thinking-mode recommendation), 16k tokens,
-AIME avg@8, LCB pass@1 (n=1), IFEval/IFBench once.  The paper's protocol (T=1.0, no top-p/top-k,
-AIME avg@32) is still available as ``--preset paper``.
+SAMPLING (2026-09-16): ONE preset, ``--preset train`` = the sampling the OPD/MOPD rollouts use
+(temperature 1.0, top_p 1.0, top_k disabled -- trl 0.29 GRPOConfig default). Every other preset
+was removed so no evaluation can silently run at different parameters than training; the earlier
+ones (qwen-thinking 0.6/0.95/20, paper, greedy) survive only in the `preset` field of the
+metrics.json files they produced. AIME avg@8, LCB pass@1 (n=1), IFEval/IFBench once.
 
 Examples
   python -m mopd.eval.run_eval --model outputs/sft/qwen3-8b --out outputs/eval/sft-8b
@@ -27,11 +28,10 @@ from typing import Any, Dict, List
 from mopd.common.io import read_jsonl, write_json, write_jsonl
 from mopd.eval.benchmarks import BENCHMARKS, DEFAULT_SET, DOMAIN_OF
 
+#: ONE preset only (2026-09-16): the sampling the OPD/MOPD rollouts use -- temperature 1.0,
+#: top_p 1.0, top_k disabled (trl GRPOConfig default 0). See mopd/eval/registry.py.
 PRESETS = {
-    "paper": dict(temperature=1.0, top_p=1.0, top_k=-1, presence_penalty=0.0),
-    "qwen-thinking": dict(temperature=0.6, top_p=0.95, top_k=20, presence_penalty=0.0),
-    "qwen-nonthinking": dict(temperature=0.7, top_p=0.8, top_k=20, presence_penalty=1.5),
-    "greedy": dict(temperature=0.0, top_p=1.0, top_k=-1, presence_penalty=0.0),
+    "train": dict(temperature=1.0, top_p=1.0, top_k=-1, presence_penalty=0.0),
 }
 
 
@@ -55,8 +55,8 @@ def build_parser():
     p.add_argument("--benchmarks", default=",".join(DEFAULT_SET))
     p.add_argument("--gpus", default="0-7")
     p.add_argument("--tp", type=int, default=1)
-    p.add_argument("--preset", default="qwen-thinking", choices=list(PRESETS),
-                   help="default qwen-thinking (0.6/0.95/20; user decision, differs from the paper's T=1.0)")
+    p.add_argument("--preset", default="train", choices=list(PRESETS),
+                   help="only 'train' exists: the sampling used by the training rollouts")
     p.add_argument("--n", type=int, default=None, help="samples per prompt for ALL benches (default: per-bench)")
     p.add_argument("--n-math", type=int, default=None)
     p.add_argument("--n-code", type=int, default=None)

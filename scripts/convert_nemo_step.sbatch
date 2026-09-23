@@ -3,6 +3,7 @@
 # model (the transformers-5 config written by the converter loses rope fields for the eval stack -> 0 scores on long
 # contexts). Only needed when a step has no policy/weights/model/consolidated; otherwise use scripts/mk_eval_model.sh.
 #   STEP=outputs/rl/grpo_math_v3/step_200 OUT=models/rl_steps/rl-mathv3-ck200 REF=models/Qwen3-4B-OT3 sbatch -J k-sean-convert scripts/convert_nemo_step.sbatch
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1

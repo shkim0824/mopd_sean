@@ -2,19 +2,20 @@
 # 6-benchmark OOD/general eval (AIME24/25/26, LiveCodeBench v6, IFEval, IFBench) on N nodes: each node runs 8 vLLM DP
 # workers on its shard subset, node 0 merges + grades. Standard OT3 setting = 32k tokens, qwen-thinking preset.
 #   MODEL=outputs/opd/<run>/checkpoint-200 TAG=full-opd-<run>-ck200-32k MAX_TOKENS=32768 MAX_MODEL_LEN=40960 \
-#     sbatch -N 2 -J k-sean-eval6-<tag> --cpus-per-task=32 --mem=600G -t 12:00:00 $(prefer 2) scripts/eval_6bench.sbatch
+#     sbatch -N 2 -J k-sean-eval6-<tag> --cpus-per-task=32 --mem=600G -t 4:00:00 $(prefer 2) scripts/eval_6bench.sbatch
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 2
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=600G
-#SBATCH -t 12:00:00
+#SBATCH -t 4:00:00
 #SBATCH --output=logs/eval6-%j.log
 MOPD_REPO="${MOPD_REPO:-${SLURM_SUBMIT_DIR:-$(pwd)}}"; source "${MOPD_REPO}/scripts/_common.sh"
 cd "${REPO}"; mkdir -p logs
 MODEL="${MODEL:?set MODEL}"; TAG="${TAG:?set TAG}"; NUM_NODES="${SLURM_NNODES:?}"
 OUT="${OUT:-outputs/eval_6bench/${TAG}}"; mkdir -p "${OUT}"
-ARGS="--model '$(realpath "${MODEL}")' --out '${OUT}' --gpus 0-7 --preset ${PRESET:-qwen-thinking} --max-tokens ${MAX_TOKENS:-32768} --max-model-len ${MAX_MODEL_LEN:-40960}"
+ARGS="--model '$(realpath "${MODEL}")' --out '${OUT}' --gpus 0-7 --preset ${PRESET:-train} --max-tokens ${MAX_TOKENS:-32768} --max-model-len ${MAX_MODEL_LEN:-40960}"
 ARGS="${ARGS} --benchmarks ${BENCHMARKS:-aime24,aime25,aime26,lcb_v6,ifeval,ifbench} --prompt-mode ${PROMPT_MODE:-chat} --thinking ${THINKING:-true} --num-nodes ${NUM_NODES}"
 [[ -n "${N:-}" ]] && ARGS="${ARGS} --n ${N}"
 [[ -n "${N_MATH:-}" ]] && ARGS="${ARGS} --n-math ${N_MATH}"

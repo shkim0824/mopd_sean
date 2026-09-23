@@ -1,0 +1,49 @@
+# OPD tau2 (pg), single domain, SFT tau2 teacher (user 2026-09-17, phase 3-2): = law_pg_lawsft.yaml recipe
+# (v2: mask_truncated_completions, save every 25, cap 16k) on the tau2 single-turn pool built by
+# mopd/data/prep_tau2_opd.py from inclusionAI/AReaL-tau2-data (context -> next assistant turn), teacher
+# models/teacher-tau (= MMOPD/Qwen3-4B-OT3-tau, SFT on the same 33,531 trajectories).
+# Prompts are pre-rendered strings (system policy + tool schemas + history); the token cap keeps
+# prompt + 16k completion inside the 32k teacher/vLLM context. Launch with 8 nodes:
+#   STUDENT_NODES=4 TEACHERS=tau:models/teacher-tau WEIGHTS=tau=1.0 CONFIG=configs/opd/tau_pg.yaml sbatch -N 8 ...
+model:
+  student: models/Qwen3-4B-OT3
+  dtype: float32
+teachers:
+  endpoints_file: ""                   # written by scripts/opd.sbatch (mopd.distill.placement)
+  top_k: 0
+  max_workers: 64
+  timeout: 900
+data:
+  paths:
+    tau: data/rl_pools/tau_opd_train.jsonl
+  max_rows_per_domain: null
+  seed: 42
+  thinking: true
+  max_prompt_tokens: 15872             # 32768 context - 16384 completion - 512 margin (pre-rendered rows)
+distill:
+  mode: pg                          # pg (Eq. 3-4, A_max clip) | topk (Eq. 5 over teacher top-k)
+  a_max: 5.0
+  task_reward_coef: 0.0
+  log_task_reward: false
+train:
+  lr: 1.0e-6
+  batch_size: 32                       # 32 prompts x G=1 per optimizer step (8 nodes: 4 student -> world 32, grad_accum 1)
+  num_generations: 1
+  max_completion_length: 16384         # same cap as every other OPD; runaway samples are masked
+  max_steps: 200
+  per_device_bs: 1
+  temperature: 1.0
+  top_p: 1.0
+  beta: 0.0
+  scheduler: constant
+  warmup_ratio: 0.05
+  max_grad_norm: 1.0
+  save_steps: 25
+  save_total_limit: null               # keep ALL checkpoints
+  logging_steps: 1
+  vllm_gpu_memory_utilization: 0.25
+  vllm_tp: 1
+  vllm_is_mode: token_truncate
+  ddp_timeout: 7200
+  mask_truncated_completions: true      # on for every run from 2026-09-17
+  output: outputs/opd/opd_tau_pg

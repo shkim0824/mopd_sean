@@ -2,6 +2,7 @@
 # Standing LLM-judge server (math_with_judge rewards; Qwen3-30B-A3B validated 2026-09-04: 99.84% agreement), vLLM tp8 on
 # one node; publishes its URL to tmp/judge_url (the RL env re-reads it every step). Alternative to JUDGE=1 in rl_nemo.sh.
 #   JUDGE_MODEL=$S/past/models/Qwen3-30B-A3B sbatch -J k-sean-judge --cpus-per-task=32 --mem=600G -t 96:00:00 $(prefer 1) scripts/judge_server.sbatch
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8

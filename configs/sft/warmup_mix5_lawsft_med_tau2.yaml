@@ -1,0 +1,35 @@
+# phase 3-3 (2026-09-17): 5-domain SFT warm-up = the phase-3 mixed warm-up (law-sft 3200 + med B x2, 52,002 rows) + 6,400 tau2
+# SFT rows (pre-rendered with the official tool schemas). Same recipe as warmup_mix_lawsft_med.yaml except max_len 32768 (tau rows
+# average 8k tokens). One epoch, lr 1e-5 cosine; the MOPD arm mopd-5dom-128-sftw starts from the final checkpoint.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources: {math: null, code: null, if: null, mix: data/sft_warmup/mix_lawsft3200_medB2ep_tau6400.jsonl}
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_warmup_mix5_lawsft_med_tau2
+  epochs: 1.0
+  max_steps: -1
+  lr: 1.0e-5
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: epoch
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

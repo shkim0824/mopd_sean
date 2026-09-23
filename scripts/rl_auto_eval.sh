@@ -9,7 +9,7 @@ PFX="$1"; RL="$2"; REF="$3"; BENCH="$4"; shift 4; STEPS="$*"; mkdir -p models/rl
 for N in ${STEPS}; do
   while true; do
     if [[ -f "${RL}/step_${N}/policy/weights/model/consolidated/model.safetensors.index.json" ]]; then
-      nxt=$((N + ${NEXT:-10})); if [[ "${NEXT:-10}" == "0" || -d "${RL}/step_${nxt}" ]] || ! squeue -h -o %j | grep -q "${JP}-rl-"; then sleep 120; break; fi
+      nxt=$((N + ${NEXT:-10})); if [[ "${NEXT:-10}" == "0" || -d "${RL}/step_${nxt}" ]] || ! squeue -h -o %j | grep -qE -- "-rl-$(basename "${RL}")\$"; then sleep 120; break; fi   # this run's job gone = final ckpt complete
     fi
     sleep 300
   done

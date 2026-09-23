@@ -1,0 +1,39 @@
+# s10b와 동일한 데이터/토큰(law 2.2M + med 120M + tau 80M, sean teacher)로 batch만 32 -> 16 (2 nodes x pd1 x ga1 = 16 bins of 32k).
+# 같은 토큰을 2배의 optimizer step(392 vs 196)으로 쓴다: 배치 크기가 OOD(수학/코드) 손상에 주는 영향 측정용. (user 2026-09-20)
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources:
+    math: null
+    code: null
+    if: null
+    mix: data/sft_warmup/wu_mix_s10b.jsonl
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/wu_mix_s10b_b16
+  epochs: 100.0
+  max_steps: 392
+  lr: 1.0e-05
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: steps
+  save_steps: 98
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

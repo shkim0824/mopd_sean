@@ -1,0 +1,38 @@
+# phase 3-3 v3: 5-domain warm-up mix = law-sft 3200 + med B x2 (teacher samples, as in phase 3) + up to 16,384 tau2-TEACHER samples; 1 node, 1 epoch, lr 1e-5.
+# block-style on purpose: scripts/cfgval.py is a line-based reader (flow-style mappings broke the first warm-up submission 577375).
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources:
+    math: null
+    code: null
+    if: null
+    mix: data/sft_warmup/mix_lawsft3200_medB2ep_tau2teacher.jsonl
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_warmup_mix5_v3
+  epochs: 1.0
+  max_steps: -1
+  lr: 1.0e-05
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: epoch
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

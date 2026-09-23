@@ -10,7 +10,7 @@ RUN="$1"; MODE="$2"; shift 2; STEPS="$*"; D="${REPO}/outputs/opd/${RUN}"; cd "${
 for N in ${STEPS}; do
   CK="${D}/checkpoint-${N}"
   while true; do   # a ckpt is complete when trainer_state.json + weights index exist (+ grace period)
-    if [[ -f "${CK}/trainer_state.json" && -f "${CK}/config.json" && -f "${CK}/model.safetensors.index.json" ]]; then sleep 120; break; fi
+    if [[ -f "${CK}/trainer_state.json" && -f "${CK}/config.json" && ( -f "${CK}/model.safetensors.index.json" || -f "${CK}/model.safetensors" ) ]]; then sleep 120; break; fi
     if [[ -f "${D}/opd_done.json" && ! -d "${CK}" ]]; then echo "run finished without checkpoint-${N}; skipping"; continue 2; fi
     sleep 300
   done

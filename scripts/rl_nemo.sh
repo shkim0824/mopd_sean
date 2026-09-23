@@ -12,6 +12,7 @@ cd "${REPO}"; mkdir -p logs
 CONFIG="$(realpath "${CONFIG:?set CONFIG=configs/rl/<x>.yaml}")"; NAME="${RUN_NAME:-$(basename "${CONFIG}" .yaml)}"; NODES="${NODES:-4}"
 OVERRIDES="${OVERRIDES:-}"   # extra hydra key=value overrides appended to the command (e.g. policy.model_name=... data.train.data_path=...)
 EXC="${EXC:-$(prefer "${NODES}" | sed 's/--exclude=//')}"
+EXC="$(excl_union "${EXC}" "${NEVER_EXCL}" "${KILL_ZONE}")"   # never n033-036; skip the kill zone (rules in _common.sh)
 export CONTAINER="${NEMO_IMG}" MOUNTS="/mnt/datafs:/mnt/datafs,/tmp:/tmp" GPUS_PER_NODE=8 CPUS_PER_WORKER=32 NEMO_RL_VENV_DIR=/opt/ray_venvs \
   TORCH_CUDA_ARCH_LIST=8.0 HF_HOME="${HF_HOME_DIR}" HF_HUB_OFFLINE=1 PYTHONPATH="${REPO}" BASE_LOG_DIR="${REPO}/logs/nemo"
 mkdir -p "${REPO}/logs/nemo"

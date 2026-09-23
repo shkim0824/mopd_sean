@@ -4,6 +4,7 @@
 # ATTACKER is given (ATTACKER=<defender> = the recipe's v1 self-play); defender = the current policy.
 #   SKELETONS=data/domains/ih-challenge/skeletons_train_r0.jsonl DEFENDER=models/Qwen3-4B-OT3 OUT=data/rl_pools/ihc_r0_4b.jsonl \
 #     sbatch -J k-sean-ihc-synth-r0 $(place 1) scripts/ihc_synth.sbatch        (BUDGET=3 default; LIMIT=64 for a smoke)
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8

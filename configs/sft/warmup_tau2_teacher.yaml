@@ -1,0 +1,39 @@
+# phase 3-3 tau2 warm-up (phase-2 procedure): SFT on tau2-teacher rejection samples (k=4, T=1.0/p.95/k20, kind-agreement with the AReaL
+# reference turn, keep<=3 shortest distinct), 1 node, 1 epoch, lr 1e-5 cosine, 4 checkpoints -> tau2 eval each -> branch at saturation.
+model:
+  base: models/Qwen3-4B-OT3
+  attn: auto
+data:
+  sources:
+    math: null
+    code: null
+    if: null
+    tau: data/sft_warmup/tau2_teacher_k4_keep3.jsonl
+  cache_dir: null
+  weights: null
+  max_rows: null
+  max_len: 32768
+  thinking: true
+  packing: flatten
+  seed: 42
+train:
+  output: outputs/sft/sft_warmup_tau2_teacher
+  epochs: 1.0
+  max_steps: -1
+  lr: 1.0e-05
+  scheduler: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  per_device_bs: 1
+  grad_accum: 1
+  liger: true
+  grad_ckpt: true
+  logging_steps: 1
+  save_strategy: steps
+  save_steps: 60
+  save_total_limit: null
+  save_only_model: true
+  resume: auto
+  seed: 42
+  dataloader_workers: 2

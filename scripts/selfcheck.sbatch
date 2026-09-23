@@ -3,6 +3,7 @@
 # (1) import every mopd.* module (the NeMo-RL side is imported inside the NeMo container in a second step),
 # (2) run the CPU tests under tests/, (3) validate every config path (scripts/cfgval.py --check-paths).
 #   sbatch -J k-sean-selfcheck --exclude=ib-a100-cluster-a-n[001-040] scripts/selfcheck.sbatch      (from the repo root)
+#SBATCH --exclude=ib-a100-cluster-a-n[033-036]   # user rule 2026-09-15 (CLI --exclude overrides; launchers pass a superset)
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
